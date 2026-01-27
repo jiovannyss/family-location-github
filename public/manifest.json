@@ -1,0 +1,19 @@
+{
+  "name": "Семейна Локация",
+  "short_name": "Локация",
+  "description": "Приложение за семейно споделяне на местоположение",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FCFCFC",
+  "theme_color": "#2A9D8F",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["social", "utilities"],
+  "lang": "bg"
+}

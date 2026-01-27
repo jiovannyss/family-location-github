@@ -1,73 +1,53 @@
-# Welcome to your Lovable project
+# Семейна Локация - MVP
 
-## Project info
+Приложение за семейно споделяне на местоположение в реално време.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Функционалности
 
-## How can I edit this code?
+- ✅ **Автентикация** - Регистрация и вход с имейл/парола
+- ✅ **Кръгове** - Създаване на семейни/приятелски групи
+- ✅ **Покани** - Генериране на 6-символни кодове за покана
+- ✅ **Споделяне на локация** - Toggle за включване/изключване
+- ✅ **Карта** - Визуализация на позициите на членовете
+- ✅ **Realtime** - Автоматично обновяване при нова локация
+- ✅ **Поверителност** - RLS политики за защита на данните
+- ✅ **Изтриване на данни** - Възможност за изтриване на историята
 
-There are several ways of editing your application.
+## Как работи
 
-**Use Lovable**
+1. **Регистрация/Вход** - Създайте акаунт или влезте
+2. **Създайте кръг** - Натиснете "Нов кръг" и дайте име
+3. **Поканете членове** - Генерирайте код и го споделете
+4. **Включете споделянето** - Toggle бутонът в горната част
+5. **Вижте позициите** - Членовете се показват на картата
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Технологии
 
-Changes made via Lovable will be committed automatically to this repo.
+- **Frontend**: React + TypeScript + Tailwind CSS + Framer Motion
+- **Backend**: Lovable Cloud (Supabase)
+- **Карта**: Leaflet + React-Leaflet
+- **Realtime**: Supabase Realtime subscriptions
 
-**Use your preferred IDE**
+## Структура на базата данни
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- `profiles` - Потребителски профили
+- `circles` - Семейни/приятелски кръгове
+- `circle_members` - Членство в кръгове
+- `invites` - Кодове за покана
+- `sharing_state` - Статус на споделяне
+- `location_points` - Записани локации (последните 100)
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Сигурност
 
-Follow these steps:
+- Row Level Security (RLS) на всички таблици
+- Локациите се виждат само от accepted членове
+- Автоматично изтриване на стари локации (>100 записа)
+- Кодовете за покана изтичат след 7 дни
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## Бъдещи подобрения
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- Push нотификации
+- Geofencing (зони)
+- История на движението
+- Батерия и платформа
+- Native mobile app с Capacitor
