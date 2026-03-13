@@ -195,6 +195,14 @@ export type Database = {
     }
     Functions: {
       generate_invite_code: { Args: never; Returns: string }
+      is_accepted_circle_mate: {
+        Args: { _other_user_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_circle_member: {
+        Args: { _circle_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       member_status: "invited" | "accepted"
