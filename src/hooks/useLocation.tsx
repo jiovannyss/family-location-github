@@ -63,75 +63,71 @@ export function useLocationTracking() {
   const [error, setError] = useState<string | null>(null);
   const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const userRef = useRef(user);
-  userRef.current = user;
+  const isTrackingRef = useRef(false);
+  const userIdRef = useRef<string | undefined>(user?.id);
+  userIdRef.current = user?.id;
 
-  const sendLocation = useCallback(async (position: GeolocationPosition) => {
-    const currentUser = userRef.current;
-    if (!currentUser) return;
-    
-    const { error } = await supabase
-      .from('location_points')
-      .insert({
-        user_id: currentUser.id,
-        lat: position.coords.latitude,
-        lng: position.coords.longitude,
-        accuracy_m: position.coords.accuracy,
-        recorded_at: new Date().toISOString(),
-        device_platform: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop',
-      });
-
-    if (error) console.error('Failed to send location:', error);
-  }, []);
-
-  const requestPermission = useCallback(async () => {
-    try {
-      const result = await navigator.permissions.query({ name: 'geolocation' });
+  useEffect(() => {
+    // Check permission on mount
+    navigator.permissions?.query({ name: 'geolocation' }).then((result) => {
       setPermissionState(result.state);
       result.addEventListener('change', () => setPermissionState(result.state));
-      return result.state;
-    } catch {
-      return 'prompt' as PermissionState;
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    // Clean up any existing tracking
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
-  }, []);
 
-  const getCurrentPosition = useCallback(() => {
-    return new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCurrentPosition(position);
-          setError(null);
-          resolve(position);
-        },
-        (err) => {
-          setError(err.message);
-          reject(err);
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
-      );
-    });
-  }, []);
-
-  useEffect(() => {
-    requestPermission();
-  }, [requestPermission]);
-
-  useEffect(() => {
-    if (!isSharing || !user) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+    if (!isSharing || !user?.id) {
+      isTrackingRef.current = false;
       return;
     }
 
+    // Prevent double-start from StrictMode
+    if (isTrackingRef.current) return;
+    isTrackingRef.current = true;
+
     let cancelled = false;
 
+    const getPos = (): Promise<GeolocationPosition> =>
+      new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000,
+        });
+      });
+
+    const sendPos = async (position: GeolocationPosition) => {
+      const uid = userIdRef.current;
+      if (!uid || cancelled) return;
+      const { error: err } = await supabase
+        .from('location_points')
+        .insert({
+          user_id: uid,
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy_m: position.coords.accuracy,
+          recorded_at: new Date().toISOString(),
+          device_platform: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop',
+        });
+      if (err) console.error('Failed to send location:', err);
+    };
+
     const doUpdate = async () => {
+      if (cancelled) return;
       try {
-        const pos = await getCurrentPosition();
-        if (!cancelled) await sendLocation(pos);
-      } catch (err) {
+        const pos = await getPos();
+        if (cancelled) return;
+        setCurrentPosition(pos);
+        setError(null);
+        await sendPos(pos);
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || 'Location error');
         console.error('Location update failed:', err);
       }
     };
@@ -141,19 +137,18 @@ export function useLocationTracking() {
 
     return () => {
       cancelled = true;
+      isTrackingRef.current = false;
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
     };
-  }, [isSharing, user?.id, getCurrentPosition, sendLocation]);
+  }, [isSharing, user?.id]);
 
   return {
     currentPosition,
     error,
     permissionState,
-    requestPermission,
-    getCurrentPosition,
     isUpdating: false,
   };
 }
