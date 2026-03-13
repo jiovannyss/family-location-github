@@ -143,7 +143,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
           const isCurrentUser = member.user_id === currentUserId;
           
           return (
-            <div key={member.id}>
+            <Fragment key={member.id}>
               {/* Accuracy circle */}
               {loc.accuracy_m && loc.accuracy_m > 10 && (
                 <LeafletCircle
@@ -183,7 +183,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
                   </div>
                 </Popup>
               </Marker>
-            </div>
+            </Fragment>
           );
         })}
       </MapContainer>
