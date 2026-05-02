@@ -31,7 +31,7 @@ import { toast } from 'sonner';
 
 interface CircleSelectorProps {
   selectedCircle: Circle | null;
-  onSelectCircle: (circle: Circle) => void;
+  onSelectCircle: (circle: Circle | null) => void;
 }
 
 export default function CircleSelector({ selectedCircle, onSelectCircle }: CircleSelectorProps) {
@@ -86,7 +86,7 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
       onSuccess: () => {
         toast.success(`Кръгът "${circle.name}" е изтрит`);
         if (selectedCircle?.id === circle.id) {
-          onSelectCircle(circles?.find(c => c.id !== circle.id) || null as any);
+          onSelectCircle(circles?.find(c => c.id !== circle.id) ?? null);
         }
       },
       onError: () => {
