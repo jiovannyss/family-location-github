@@ -1,11 +1,17 @@
 name: Build Android (manual)
 
-# Ръчен билд на Android приложението от текущия `main` (т.е. от каквото е
-# деплойнато на family-location.glowter.com). Стартира се от GitHub UI:
-# Actions → "Build Android (manual)" → Run workflow.
+# Ръчен билд на Android приложението от текущия `main`.
+# Стартира се от GitHub UI: Actions → "Build Android (manual)" → Run workflow.
 #
-# Резултат: `app-debug.apk` като артефакт за изтегляне (за инсталация на телефон).
-# За production .aab за Google Play е нужен подписващ ключ — виж README.
+# Output:
+#   - debug          → app-debug.apk (sideload-able)
+#   - release-aab    → app-release.aab (за Google Play Internal Testing) — изисква signing secrets
+#
+# GitHub Secrets, нужни за release-aab:
+#   ANDROID_KEYSTORE_BASE64    — keystore-ът, кодиран с `base64 -i release.keystore`
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
 
 on:
   workflow_dispatch:
@@ -17,11 +23,19 @@ on:
         type: choice
         options:
           - debug
-          - release-unsigned
+          - release-aab
 
 jobs:
   android:
     runs-on: ubuntu-latest
+
+    # Маскира secrets глобално, за да не се появят случайно в logs.
+    env:
+      ANDROID_KEYSTORE_BASE64:   ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS:         ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD:      ${{ secrets.ANDROID_KEY_PASSWORD }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +53,19 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Validate release secrets
+        if: ${{ inputs.build_type == 'release-aab' }}
+        run: |
+          missing=0
+          for v in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "❌ Missing GitHub Secret: $v"
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then exit 1; fi
+          echo "✅ All signing secrets present."
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -54,19 +81,53 @@ jobs:
       - name: Sync Capacitor
         run: bunx cap sync android
 
-      - name: Gradle build
+      - name: Patch AndroidManifest (permissions, hardening)
+        run: |
+          chmod +x scripts/patch-android-manifest.sh
+          ./scripts/patch-android-manifest.sh
+
+      # ----- DEBUG -----
+      - name: Gradle assembleDebug
+        if: ${{ inputs.build_type == 'debug' }}
         working-directory: android
         run: |
           chmod +x ./gradlew
-          if [ "${{ inputs.build_type }}" = "release-unsigned" ]; then
-            ./gradlew assembleRelease
-          else
-            ./gradlew assembleDebug
-          fi
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload debug APK
+        if: ${{ inputs.build_type == 'debug' }}
         uses: actions/upload-artifact@v4
         with:
-          name: family-location-android-${{ inputs.build_type }}
-          path: android/app/build/outputs/apk/**/*.apk
+          name: family-location-android-debug
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+      # ----- RELEASE AAB -----
+      - name: Setup release signing
+        if: ${{ inputs.build_type == 'release-aab' }}
+        # Скриптът пише secrets директно във файлове; ехото му е безопасно.
+        run: |
+          chmod +x scripts/setup-android-signing.sh
+          ./scripts/setup-android-signing.sh
+
+      - name: Gradle bundleRelease
+        if: ${{ inputs.build_type == 'release-aab' }}
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew bundleRelease --no-daemon --stacktrace
+
+      - name: Upload release AAB
+        if: ${{ inputs.build_type == 'release-aab' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: family-location-android-release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+      - name: Cleanup signing material
+        if: ${{ always() && inputs.build_type == 'release-aab' }}
+        run: |
+          rm -f android/key.properties
+          rm -f "$RUNNER_TEMP/release.keystore" || true
+          echo "🧹 Signing material removed from runner."
