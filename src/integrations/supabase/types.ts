@@ -277,6 +277,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      find_invite_by_code: {
+        Args: { _code: string }
+        Returns: {
+          circle_id: string
+          expires_at: string
+        }[]
+      }
       generate_invite_code: { Args: never; Returns: string }
       is_accepted_circle_mate: {
         Args: { _other_user_id: string; _user_id: string }
