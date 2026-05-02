@@ -186,17 +186,22 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
   );
 
   const clusters = useMemo(() => {
-    const entries = membersWithLocation.map((member) => {
-      const loc = member.last_location!;
-      return {
-        member,
-        isCurrentUser: member.user_id === currentUserId,
-        displayName: member.profile?.display_name || 'Потребител',
-        lat: loc.lat,
-        lng: loc.lng,
-        accuracy_m: loc.accuracy_m ?? null,
-      };
-    });
+    const entries = membersWithLocation
+      .filter((m) => {
+        const loc = m.last_location;
+        return loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng);
+      })
+      .map((member) => {
+        const loc = member.last_location!;
+        return {
+          member,
+          isCurrentUser: member.user_id === currentUserId,
+          displayName: member.profile?.display_name || 'Потребител',
+          lat: loc.lat,
+          lng: loc.lng,
+          accuracy_m: loc.accuracy_m ?? null,
+        };
+      });
     return buildClusters(entries);
   }, [membersWithLocation, currentUserId]);
 
