@@ -41,13 +41,13 @@ export default function Header() {
       animate={{ y: 0, opacity: 1 }}
       className="sticky top-0 z-50 glass border-b border-border/50"
     >
-      <div className="container flex items-center justify-between h-16 px-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-md">
-            <MapPin className="w-5 h-5" />
+      <div className="container flex items-center justify-between h-14 sm:h-16 px-3 sm:px-4 max-w-7xl">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-md flex-shrink-0">
+            <MapPin className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <h1 className="font-bold text-lg text-foreground">Семейна Локация</h1>
+          <div className="min-w-0">
+            <h1 className="font-bold text-base sm:text-lg text-foreground truncate">Семейна Локация</h1>
             <p className="text-xs text-muted-foreground hidden sm:block">Бъдете свързани</p>
           </div>
         </div>

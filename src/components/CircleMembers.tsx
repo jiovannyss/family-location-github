@@ -95,19 +95,19 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-foreground">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-base sm:text-lg font-semibold text-foreground">
           Членове ({acceptedMembers.length})
         </h2>
         {isOwner && (
           <Dialog open={isInviteOpen} onOpenChange={setIsInviteOpen}>
             <DialogTrigger asChild>
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="outline" className="text-xs sm:text-sm">
                 <UserPlus className="w-4 h-4" />
                 Покани
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Поканете членове</DialogTitle>
                 <DialogDescription>
@@ -120,13 +120,13 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                     {invites.map((invite) => (
                       <div
                         key={invite.id}
-                        className="flex items-center justify-between p-4 bg-secondary rounded-lg"
+                        className="flex items-center justify-between gap-2 p-3 sm:p-4 bg-secondary rounded-lg"
                       >
-                        <div>
-                          <div className="text-2xl font-mono font-bold tracking-widest text-foreground">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xl sm:text-2xl font-mono font-bold tracking-widest text-foreground truncate">
                             {invite.code}
                           </div>
-                          <p className="text-sm text-muted-foreground mt-1">
+                          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                             Изтича {getTimeAgo(invite.expires_at)}
                           </p>
                         </div>
@@ -134,6 +134,7 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                           variant="ghost"
                           size="icon"
                           onClick={() => handleCopyCode(invite.code)}
+                          className="flex-shrink-0"
                         >
                           {copiedCode === invite.code ? (
                             <Check className="w-4 h-4 text-success" />
@@ -149,8 +150,8 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                     Няма активни покани
                   </p>
                 )}
-                <Button 
-                  onClick={handleCreateInvite} 
+                <Button
+                  onClick={handleCreateInvite}
                   className="w-full"
                   disabled={isCreating}
                 >
@@ -183,40 +184,40 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                 className="cursor-pointer transition-all duration-200 hover:shadow-md hover:bg-secondary/30"
                 onClick={() => onMemberClick?.(member)}
               >
-                <CardContent className="p-4">
+                <CardContent className="p-3 sm:p-4">
                   <div className="flex items-start gap-3">
-                    <div className="relative">
-                      <Avatar className="w-12 h-12 border-2 border-background shadow-sm">
+                    <div className="relative flex-shrink-0">
+                      <Avatar className="w-10 h-10 sm:w-12 sm:h-12 border-2 border-background shadow-sm">
                         <AvatarImage src={member.profile?.avatar_url || undefined} />
-                        <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                        <AvatarFallback className="bg-primary/10 text-primary font-medium text-sm">
                           {getInitials(member.profile?.display_name || 'U')}
                         </AvatarFallback>
                       </Avatar>
-                      <div 
-                        className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-card ${
-                          member.sharing_state?.is_sharing 
-                            ? 'status-sharing' 
+                      <div
+                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border-2 border-card ${
+                          member.sharing_state?.is_sharing
+                            ? 'status-sharing'
                             : 'status-offline'
                         }`}
                       />
                     </div>
-                    
+
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-foreground truncate">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="font-medium text-sm sm:text-base text-foreground truncate max-w-[60%]">
                           {member.profile?.display_name}
                           {member.user_id === user?.id && (
                             <span className="text-muted-foreground font-normal"> (Вие)</span>
                           )}
                         </h3>
                         {member.role === 'owner' && (
-                          <Badge variant="secondary" className="text-xs">
+                          <Badge variant="secondary" className="text-[10px] sm:text-xs px-1.5 py-0">
                             Собственик
                           </Badge>
                         )}
                       </div>
-                      
-                      <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+
+                      <div className="flex items-center gap-x-3 gap-y-1 mt-1.5 text-xs sm:text-sm text-muted-foreground flex-wrap">
                         {member.sharing_state?.is_sharing ? (
                           <>
                             <span className="flex items-center gap-1">
@@ -225,12 +226,12 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                             </span>
                             {member.last_location && (
                               <>
-                                <span className="flex items-center gap-1">
+                                <span className="flex items-center gap-1 whitespace-nowrap">
                                   <Clock className="w-3.5 h-3.5" />
                                   {getTimeAgo(member.last_location.recorded_at)}
                                 </span>
                                 {member.last_location.accuracy_m && (
-                                  <span className="flex items-center gap-1">
+                                  <span className="flex items-center gap-1 whitespace-nowrap">
                                     <Target className="w-3.5 h-3.5" />
                                     ±{Math.round(member.last_location.accuracy_m)}м
                                   </span>
