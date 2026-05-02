@@ -6,6 +6,7 @@ import { SharingState } from '@/lib/types';
 import { getDeviceId } from '@/services/deviceId';
 import { geolocation, type Coords } from '@/services/geolocation';
 import { getDeviceInfo } from '@/services/device';
+import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
 
 export function useSharingState() {
   const { user } = useAuth();
@@ -111,6 +112,7 @@ export function useLocationTracking() {
 
     let cancelled = false;
     const platform = getDeviceInfo().platform;
+    let bgHandle: BackgroundGeoHandle | null = null;
 
     const sendPos = async (coords: Coords) => {
       const uid = userIdRef.current;
@@ -143,8 +145,25 @@ export function useLocationTracking() {
       }
     };
 
-    doUpdate();
-    intervalRef.current = setInterval(doUpdate, 120000);
+    // На native: стартираме background tracking — продължава да работи
+    // когато app-ът е минимизиран или екранът е заключен.
+    if (isBackgroundGeoSupported()) {
+      void startBackgroundGeolocation(
+        (coords) => {
+          if (cancelled) return;
+          setCurrentPosition(coords);
+          setError(null);
+          void sendPos(coords);
+        },
+        (err) => {
+          if (!cancelled) setError(err.message);
+        }
+      ).then((h) => { bgHandle = h; if (cancelled) void h.stop(); });
+    } else {
+      // Web: foreground polling само (browser ограничение)
+      doUpdate();
+      intervalRef.current = setInterval(doUpdate, 120000);
+    }
 
     return () => {
       cancelled = true;
@@ -153,6 +172,7 @@ export function useLocationTracking() {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      if (bgHandle) void bgHandle.stop();
     };
   }, [isSharing, user?.id, deviceId]);
 
