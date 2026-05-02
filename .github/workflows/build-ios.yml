@@ -1,0 +1,60 @@
+name: Build iOS (manual)
+
+# Ръчен билд на iOS приложението. Изисква macOS runner (по-бавно/по-скъпо от Android).
+# Производство в App Store изисква Apple Developer акаунт + подпис с certificate &
+# provisioning profile (които се качват като GitHub secrets — виж README).
+#
+# Този workflow прави unsigned archive за тестване на симулатор. Без сертификати
+# реален device билд НЕ може да се направи в CI.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build web bundle
+        run: bun run build
+
+      - name: Add iOS platform (if missing)
+        run: |
+          if [ ! -d "ios" ]; then
+            bunx cap add ios
+          fi
+
+      - name: Sync Capacitor
+        run: bunx cap sync ios
+
+      - name: Install CocoaPods
+        working-directory: ios/App
+        run: pod install
+
+      - name: Build for simulator (unsigned)
+        working-directory: ios/App
+        run: |
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Upload .app bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: family-location-ios-simulator
+          path: ios/App/build/Build/Products/Debug-iphonesimulator/App.app
+          if-no-files-found: error
