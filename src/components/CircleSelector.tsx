@@ -259,39 +259,53 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {circle.owner_id === user?.id && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRename(circle);
+                            }}
+                            aria-label={`Преименувай ${circle.name}`}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent
+                              className="max-w-[calc(100vw-2rem)] sm:max-w-lg"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent
-                            className="max-w-[calc(100vw-2rem)] sm:max-w-lg"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Изтриване на кръг</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Сигурни ли сте, че искате да изтриете "{circle.name}"?
-                                Това действие е необратимо.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
-                              <AlertDialogCancel className="mt-0">Отказ</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteCircle(circle)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Изтрий
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Изтриване на кръг</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Сигурни ли сте, че искате да изтриете "{circle.name}"?
+                                  Това действие е необратимо.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+                                <AlertDialogCancel className="mt-0">Отказ</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteCircle(circle)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Изтрий
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </>
                       )}
                       <ChevronRight className="w-5 h-5 text-muted-foreground" />
                     </div>
