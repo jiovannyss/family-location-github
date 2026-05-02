@@ -49,8 +49,8 @@ export default function BackgroundLocationRationale({ open, onAccept, onDecline 
             />
             <RationaleItem
               icon={<MapPin className="w-5 h-5" />}
-              titleBg="Защо „Винаги"?"
-              titleEn="Why 'Always'?"
+              titleBg={'Защо „Винаги"?'}
+              titleEn={"Why 'Always'?"}
               bodyBg="За да можете да бъдете видими на близките си дори когато телефонът е заключен или приложението е минимизирано — например по време на път до вкъщи."
               bodyEn="So your loved ones can see you even when the phone is locked or the app is in the background — e.g. on the way home."
             />
