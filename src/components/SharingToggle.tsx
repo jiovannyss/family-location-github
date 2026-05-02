@@ -115,13 +115,13 @@ export default function SharingToggle() {
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <span>Последна позиция:</span>
               <span className="font-mono text-[11px] sm:text-xs">
-                {currentPosition.coords.latitude.toFixed(5)}, {currentPosition.coords.longitude.toFixed(5)}
+                {currentPosition.lat.toFixed(5)}, {currentPosition.lng.toFixed(5)}
               </span>
             </div>
-            {currentPosition.coords.accuracy && (
+            {currentPosition.accuracy != null && (
               <div className="flex items-center justify-between gap-2 mt-1 flex-wrap">
                 <span>Точност:</span>
-                <span>±{Math.round(currentPosition.coords.accuracy)} метра</span>
+                <span>±{Math.round(currentPosition.accuracy)} метра</span>
               </div>
             )}
           </motion.div>
