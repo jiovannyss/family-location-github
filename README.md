@@ -91,6 +91,28 @@ npm run cap:open:ios       # Xcode → Product → Archive
 - **Web dir:** `dist`
 - Конфигурация: `capacitor.config.ts` (root).
 
+## Push notifications setup (само за native билдове)
+
+Push известията се изпращат през Firebase Cloud Messaging (FCM) — работи и за Android, и за iOS.
+
+### 1. Firebase проект (еднократно)
+1. Създай проект на https://console.firebase.google.com
+2. Add app → **Android**: package name `app.lovable.eaf9a1a1e6d44660bcc5cee4a68bcf76`. Свали `google-services.json` и го сложи в `android/app/`.
+3. Add app → **iOS**: bundle ID `app.lovable.eaf9a1a1e6d44660bcc5cee4a68bcf76`. Свали `GoogleService-Info.plist` и го добави в `ios/App/App/` през Xcode.
+4. За iOS: качи APNs Auth Key (от Apple Developer → Keys) в Firebase → Project Settings → Cloud Messaging.
+
+### 2. Service account за backend-а (еднократно)
+1. Firebase Console → Project Settings → Service Accounts → **Generate new private key** → сваля JSON.
+2. В Lovable → **Connectors** → Lovable Cloud → Edge Function Secrets, добави secret:
+   - Име: `FCM_SERVICE_ACCOUNT_JSON`
+   - Стойност: целият JSON като string
+3. Edge функцията `send-push` автоматично ще започне да изпраща push-ове. Без този secret тя връща тих 200 (т.е. не блокира нищо).
+
+### 3. Поведение
+- При login на native устройство → автоматична регистрация на push token в `push_tokens` таблицата.
+- При INSERT на ново съобщение → DB trigger `trg_notify_new_message` извиква `send-push` edge функцията → FCM доставя push към всички устройства на получателя.
+- Web версията продължава да работи както преди (toast + Web Notifications когато табът е скрит).
+
 ## Database / RLS
 
 - Локацията е видима само за приети членове на общ кръг, които активно споделят.
