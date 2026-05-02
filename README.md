@@ -206,3 +206,64 @@ Push известията се изпращат през Firebase Cloud Messagin
 - `public/manifest.json` с икони и theme color.
 - **Без service worker** — за да не конфликтира с Capacitor WebView и Lovable preview.
 
+
+## Internal Testing — QA checklist
+
+Преди да promote-неш Internal Testing build към Closed/Open Testing, мини през тоя checklist на поне един реален Android телефон (Android 10+ препоръчително, идеално и Android 14):
+
+### Auth
+- [ ] **Регистрация** с нов имейл — email confirmation flow работи (или auto-confirm според настройките).
+- [ ] **Login** с правилни credentials → отива на `/`.
+- [ ] **Login** с грешна парола → показва грешка на български.
+- [ ] **Logout** от dropdown menu → връща на `/auth`, не остава кеширан state.
+- [ ] **Смяна на акаунт в същата сесия**: logout → login с друг user → проверете че:
+  - картата показва кръговете на новия user (не на стария);
+  - push токенът на стария user е изтрит от `push_tokens` (проверка през Cloud → Database).
+
+### Account deletion
+- [ ] Settings → "Изтрий акаунта" → диалогът показва списък какво ще се изтрие.
+- [ ] Бутонът "Изтрий завинаги" е disabled докато не въведеш `ИЗТРИЙ`.
+- [ ] След изтриване: redirect към `/auth`, не може да се логнеш със същия имейл (или регистрация работи като нов user).
+- [ ] В DB: profile, location_points, push_tokens, sharing_state, owned circles, memberships, messages — всички изтрити.
+
+### Background location
+- [ ] При първо включване на споделянето → показва се **rationale screen** (BG+EN) преди OS prompt.
+- [ ] Грантване на **"Always"** → споделянето се включва, локацията се появява в `location_points`.
+- [ ] **Заключи екрана** → изчакай 2-3 минути → нови точки продължават да пристигат.
+- [ ] **Минимизирай app-а** (Home button) → нови точки продължават да пристигат.
+- [ ] **Foreground service notification** е видима докато tracking-ът работи.
+- [ ] Изключи споделянето от toggle-а → tracking спира, foreground notification изчезва.
+
+### Permission scenarios
+- [ ] **Denied location** при OS prompt → toggle показва грешка, споделянето не се включва.
+- [ ] **Denied notifications** (Android 13+) → app продължава да работи, но push-овете не пристигат (toast още работи в-app).
+- [ ] **Battery saver enabled** → background updates може да се забавят, но не crash-ват.
+- [ ] **Doze mode** (телефон неактивен 30+ мин) → updates пристигат при unlock.
+
+### Push notifications
+- [ ] От друго устройство, член на същия кръг, изпрати съобщение → получаваш push в lock screen в рамките на ~5 секунди.
+- [ ] Tap-ване на push → отваря app-а на правилния екран.
+- [ ] App в foreground → съобщението се появява като toast (не двойно).
+- [ ] Logout → нови съобщения към стария user **не** пристигат на това устройство.
+
+### Network resilience
+- [ ] **Offline** (airplane mode) при включено споделяне → app не crash-ва, грешките са graceful.
+- [ ] Връщане online → следващ tick изпраща позиция успешно.
+- [ ] **Лош сигнал** (3G / weak Wi-Fi) → няма duplicate точки или infinite loops.
+
+### Lifecycle / install
+- [ ] **Uninstall + reinstall** → login работи; стар push token (от предишната инсталация) се replace-ва, не дублира.
+- [ ] App update over старата версия → запазен е login; не иска отново permissions ненужно.
+- [ ] **Force-stop** от Settings → следващо отваряне зарежда нормално.
+
+### UI / Legal
+- [ ] `/privacy` и `/terms` се отварят, BG/EN превключвател работи.
+- [ ] Линковете от Auth screen и Settings → Документи водят до правилните страници.
+- [ ] Всички текстове на български са грамотни (без AI-изглеждащи фрази).
+
+### Security spot-checks
+- [ ] Опит за `curl` към `send-push` без `X-Internal-Secret` → 401.
+- [ ] Не-логнат потребител не вижда чужди locations (RLS).
+- [ ] Не може да изтриеш чужд акаунт (delete-account проверява JWT subject).
+
+При проблем — отвори issue и **не promote-вай към Closed Testing**.
