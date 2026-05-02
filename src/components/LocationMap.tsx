@@ -226,7 +226,31 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     map.setView(defaultCenter, 13);
     mapRef.current = map;
 
+    // Fix Leaflet rendering inside tabs / dynamic containers (white map issue)
+    const invalidate = () => {
+      try {
+        map.invalidateSize();
+      } catch {}
+    };
+    // First paint
+    requestAnimationFrame(invalidate);
+    // After layout settles
+    const t1 = setTimeout(invalidate, 100);
+    const t2 = setTimeout(invalidate, 400);
+
+    // Observe container size changes (mobile tab switches, viewport resize)
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+      ro = new ResizeObserver(() => invalidate());
+      ro.observe(mapContainerRef.current);
+    }
+    window.addEventListener('resize', invalidate);
+
     return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      window.removeEventListener('resize', invalidate);
+      ro?.disconnect();
       map.remove();
       mapRef.current = null;
       layersRef.current = null;
