@@ -1,35 +1,9 @@
 /**
- * Generates and persists a stable per-browser device identifier in localStorage.
- * Used to distinguish different browsers/devices for the same user account, so
- * "active device" semantics (only one device shares location at a time) work.
+ * @deprecated Import from `@/services/deviceId` instead. This shim is kept
+ * temporarily so old call sites keep working.
  */
-const STORAGE_KEY = 'family_location_device_id';
+export { getDeviceId, getDeviceIdAsync } from '@/services/deviceId';
 
-function generateId(): string {
-  // Prefer crypto.randomUUID when available
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-  // Fallback
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-export function getDeviceId(): string {
-  try {
-    const existing = localStorage.getItem(STORAGE_KEY);
-    if (existing && existing.length > 0) return existing;
-    const fresh = generateId();
-    localStorage.setItem(STORAGE_KEY, fresh);
-    return fresh;
-  } catch {
-    // localStorage unavailable (private mode, SSR) — fall back to ephemeral id
-    return 'ephemeral';
-  }
-}
-
-/**
- * Best-effort label describing the current device, shown to the user.
- */
 export function getDeviceLabel(): string {
   if (typeof navigator === 'undefined') return 'Устройство';
   const ua = navigator.userAgent;

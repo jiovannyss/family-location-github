@@ -6,7 +6,8 @@
  */
 import { storage } from './storage';
 
-const KEY = 'family-locator-device-id';
+// Keep in sync with the legacy key so existing devices keep their id after upgrade.
+const KEY = 'family_location_device_id';
 let cached: string | null = null;
 
 function generateId(): string {
