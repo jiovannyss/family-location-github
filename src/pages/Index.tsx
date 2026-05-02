@@ -4,7 +4,7 @@ import { MapPin, Users, Loader2, List, Map as MapIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
-import { useCircleMembers } from '@/hooks/useCircles';
+import { useCircleMembers, useCircles } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
 import { Circle, MemberWithLocation } from '@/lib/types';
 import Header from '@/components/Header';
