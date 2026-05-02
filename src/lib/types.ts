@@ -39,6 +39,7 @@ export interface Invite {
 
 export interface SharingState {
   user_id: string;
+  device_id: string;
   is_sharing: boolean;
   updated_at: string;
 }
@@ -46,6 +47,7 @@ export interface SharingState {
 export interface LocationPoint {
   id: string;
   user_id: string;
+  device_id: string;
   lat: number;
   lng: number;
   accuracy_m: number | null;
