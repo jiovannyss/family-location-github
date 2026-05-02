@@ -203,36 +203,36 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                     </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-medium text-sm sm:text-base text-foreground truncate max-w-[60%]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="font-medium text-sm sm:text-base text-foreground truncate min-w-0">
                           {member.profile?.display_name}
                           {member.user_id === user?.id && (
                             <span className="text-muted-foreground font-normal"> (Вие)</span>
                           )}
                         </h3>
                         {member.role === 'owner' && (
-                          <Badge variant="secondary" className="text-[10px] sm:text-xs px-1.5 py-0">
+                          <Badge variant="secondary" className="text-[10px] sm:text-xs px-1.5 py-0 flex-shrink-0">
                             Собственик
                           </Badge>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-x-3 gap-y-1 mt-1.5 text-xs sm:text-sm text-muted-foreground flex-wrap">
+                      <div className="flex items-center gap-x-3 gap-y-0.5 mt-1.5 text-xs sm:text-sm text-muted-foreground flex-wrap">
                         {member.sharing_state?.is_sharing ? (
                           <>
-                            <span className="flex items-center gap-1">
-                              <Eye className="w-3.5 h-3.5" />
+                            <span className="flex items-center gap-1 whitespace-nowrap">
+                              <Eye className="w-3.5 h-3.5 flex-shrink-0" />
                               Споделя
                             </span>
                             {member.last_location && (
                               <>
                                 <span className="flex items-center gap-1 whitespace-nowrap">
-                                  <Clock className="w-3.5 h-3.5" />
+                                  <Clock className="w-3.5 h-3.5 flex-shrink-0" />
                                   {getTimeAgo(member.last_location.recorded_at)}
                                 </span>
                                 {member.last_location.accuracy_m && (
                                   <span className="flex items-center gap-1 whitespace-nowrap">
-                                    <Target className="w-3.5 h-3.5" />
+                                    <Target className="w-3.5 h-3.5 flex-shrink-0" />
                                     ±{Math.round(member.last_location.accuracy_m)}м
                                   </span>
                                 )}
@@ -240,8 +240,8 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                             )}
                           </>
                         ) : (
-                          <span className="flex items-center gap-1">
-                            <EyeOff className="w-3.5 h-3.5" />
+                          <span className="flex items-center gap-1 whitespace-nowrap">
+                            <EyeOff className="w-3.5 h-3.5 flex-shrink-0" />
                             Не споделя
                           </span>
                         )}
