@@ -113,6 +113,7 @@ export type Database = {
           accuracy_m: number | null
           battery_level: number | null
           created_at: string
+          device_id: string
           device_platform: string | null
           id: string
           lat: number
@@ -124,6 +125,7 @@ export type Database = {
           accuracy_m?: number | null
           battery_level?: number | null
           created_at?: string
+          device_id?: string
           device_platform?: string | null
           id?: string
           lat: number
@@ -135,6 +137,7 @@ export type Database = {
           accuracy_m?: number | null
           battery_level?: number | null
           created_at?: string
+          device_id?: string
           device_platform?: string | null
           id?: string
           lat?: number
@@ -173,16 +176,19 @@ export type Database = {
       }
       sharing_state: {
         Row: {
+          device_id: string
           is_sharing: boolean
           updated_at: string
           user_id: string
         }
         Insert: {
+          device_id?: string
           is_sharing?: boolean
           updated_at?: string
           user_id: string
         }
         Update: {
+          device_id?: string
           is_sharing?: boolean
           updated_at?: string
           user_id?: string
