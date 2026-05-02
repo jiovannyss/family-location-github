@@ -316,6 +316,42 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
           )}
         </AnimatePresence>
       </div>
+
+      <Dialog
+        open={!!renameTarget}
+        onOpenChange={(o) => {
+          if (!o) setRenameTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Преименуване на кръг</DialogTitle>
+            <DialogDescription>
+              Новото име ще бъде видимо за всички членове на кръга.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="pt-2">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Ново име на кръга"
+              maxLength={60}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename();
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>
+              Отказ
+            </Button>
+            <Button onClick={handleRename} disabled={isRenaming}>
+              {isRenaming ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Запази'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
