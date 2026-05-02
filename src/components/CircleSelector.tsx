@@ -95,6 +95,39 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
     });
   };
 
+  const openRename = (circle: Circle) => {
+    setRenameTarget(circle);
+    setRenameValue(circle.name);
+  };
+
+  const handleRename = () => {
+    if (!renameTarget) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      toast.error('Моля, въведете име');
+      return;
+    }
+    if (trimmed === renameTarget.name) {
+      setRenameTarget(null);
+      return;
+    }
+    renameCircle(
+      { circleId: renameTarget.id, name: trimmed },
+      {
+        onSuccess: (updated) => {
+          toast.success('Името на кръга е обновено');
+          if (selectedCircle?.id === renameTarget.id) {
+            onSelectCircle(updated as Circle);
+          }
+          setRenameTarget(null);
+        },
+        onError: () => {
+          toast.error('Грешка при преименуване');
+        },
+      }
+    );
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center p-8">
