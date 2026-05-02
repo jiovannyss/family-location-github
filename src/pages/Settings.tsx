@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, User, Trash2, Loader2, Save } from 'lucide-react';
+import { ArrowLeft, User, Trash2, Loader2, Save, Shield, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,10 +16,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { supabase } from '@/integrations/supabase/client';
+import { storage } from '@/services/storage';
+import { Preferences } from '@capacitor/preferences';
+import { isNative } from '@/services/platform';
 import { toast } from 'sonner';
 import Header from '@/components/Header';
 
@@ -27,9 +30,10 @@ export default function Settings() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const { profile, updateProfile, isUpdating } = useProfile();
-  
+
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
 
   const handleSaveProfile = () => {
     if (!displayName.trim()) {
@@ -37,24 +41,18 @@ export default function Settings() {
       return;
     }
     updateProfile({ display_name: displayName }, {
-      onSuccess: () => {
-        toast.success('Профилът е обновен');
-      },
-      onError: () => {
-        toast.error('Грешка при обновяване на профила');
-      },
+      onSuccess: () => toast.success('Профилът е обновен'),
+      onError: () => toast.error('Грешка при обновяване на профила'),
     });
   };
 
   const handleDeleteHistory = async () => {
     if (!user) return;
-    
     try {
       const { error } = await supabase
         .from('location_points')
         .delete()
         .eq('user_id', user.id);
-
       if (error) throw error;
       toast.success('Историята на местоположенията е изтрита');
     } catch {
@@ -62,24 +60,41 @@ export default function Settings() {
     }
   };
 
+  const wipeLocalState = async () => {
+    // Web localStorage и Capacitor Preferences пълно почистване
+    try { window.localStorage.clear(); } catch { /* ignore */ }
+    try { window.sessionStorage.clear(); } catch { /* ignore */ }
+    if (isNative()) {
+      try { await Preferences.clear(); } catch { /* ignore */ }
+    }
+    // safety re-init за storage abstraction
+    void storage;
+  };
+
   const handleDeleteAccount = async () => {
     if (!user) return;
-    
+    if (confirmText.trim() !== 'ИЗТРИЙ') {
+      toast.error('Моля въведете ИЗТРИЙ за потвърждение');
+      return;
+    }
+
     setIsDeleting(true);
     try {
-      // Delete profile (cascade will handle related data)
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (profileError) throw profileError;
+      const { data, error } = await supabase.functions.invoke('delete-account', {
+        method: 'POST',
+      });
+      if (error) throw error;
+      if (data && (data as { error?: string }).error) {
+        throw new Error((data as { error: string }).error);
+      }
 
       await signOut();
+      await wipeLocalState();
       toast.success('Акаунтът е изтрит');
-      navigate('/auth');
-    } catch {
-      toast.error('Грешка при изтриване на акаунта');
+      navigate('/auth', { replace: true });
+    } catch (e) {
+      console.error(e);
+      toast.error('Грешка при изтриване на акаунта. Опитайте отново.');
     } finally {
       setIsDeleting(false);
     }
@@ -88,7 +103,7 @@ export default function Settings() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="container max-w-2xl px-4 py-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -116,13 +131,7 @@ export default function Settings() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Имейл</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={user?.email || ''}
-                  disabled
-                  className="bg-muted"
-                />
+                <Input id="email" type="email" value={user?.email || ''} disabled className="bg-muted" />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="displayName">Име</Label>
@@ -133,7 +142,7 @@ export default function Settings() {
                   placeholder="Вашето име"
                 />
               </div>
-              <Button 
+              <Button
                 onClick={handleSaveProfile}
                 disabled={isUpdating || displayName === profile?.display_name}
               >
@@ -149,78 +158,110 @@ export default function Settings() {
             </CardContent>
           </Card>
 
-          {/* Privacy Settings */}
+          {/* Legal links */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="w-5 h-5" />
+                Документи
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Link to="/privacy" className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg hover:bg-secondary transition">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Shield className="w-4 h-4" /> Политика за поверителност
+                </span>
+                <span className="text-xs text-muted-foreground">→</span>
+              </Link>
+              <Link to="/terms" className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg hover:bg-secondary transition">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <FileText className="w-4 h-4" /> Условия за ползване
+                </span>
+                <span className="text-xs text-muted-foreground">→</span>
+              </Link>
+            </CardContent>
+          </Card>
+
+          {/* Privacy / Data */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-destructive">
                 <Trash2 className="w-5 h-5" />
                 Поверителност и данни
               </CardTitle>
-              <CardDescription>
-                Управлявайте вашите данни
-              </CardDescription>
+              <CardDescription>Управлявайте вашите данни</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg">
-                <div>
+              <div className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg gap-3">
+                <div className="min-w-0">
                   <p className="font-medium text-foreground">Изтрий историята на местоположенията</p>
-                  <p className="text-sm text-muted-foreground">
-                    Изтрива всички записани локации
-                  </p>
+                  <p className="text-sm text-muted-foreground">Изтрива всички записани локации</p>
                 </div>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      Изтрий
-                    </Button>
+                    <Button variant="outline" size="sm">Изтрий</Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Изтриване на история</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Сигурни ли сте, че искате да изтриете цялата история на местоположенията? 
+                        Сигурни ли сте, че искате да изтриете цялата история на местоположенията?
                         Това действие е необратимо.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Отказ</AlertDialogCancel>
-                      <AlertDialogAction onClick={handleDeleteHistory}>
-                        Изтрий
-                      </AlertDialogAction>
+                      <AlertDialogAction onClick={handleDeleteHistory}>Изтрий</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
               </div>
 
-              <div className="flex items-center justify-between p-4 bg-destructive/10 rounded-lg">
+              <div className="p-4 bg-destructive/10 rounded-lg space-y-3">
                 <div>
                   <p className="font-medium text-destructive">Изтрий акаунта</p>
                   <p className="text-sm text-muted-foreground">
                     Изтрива акаунта и всички данни завинаги
                   </p>
                 </div>
-                <AlertDialog>
+                <AlertDialog onOpenChange={(o) => { if (!o) setConfirmText(''); }}>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm" disabled={isDeleting}>
-                      {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Изтрий'}
+                    <Button variant="destructive" size="sm" disabled={isDeleting} className="w-full sm:w-auto">
+                      {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Изтрий акаунта'}
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Изтриване на акаунт</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Сигурни ли сте, че искате да изтриете акаунта си? 
-                        Всички ваши данни ще бъдат изтрити завинаги. 
-                        Това действие е необратимо.
+                      <AlertDialogTitle>Изтриване на акаунт — необратимо</AlertDialogTitle>
+                      <AlertDialogDescription asChild>
+                        <div className="space-y-3">
+                          <p>Това действие <strong>не може да бъде отменено</strong>. Ще бъдат изтрити завинаги:</p>
+                          <ul className="list-disc pl-5 text-sm space-y-1">
+                            <li>Вашият профил и имейл</li>
+                            <li>Цялата история на местоположенията</li>
+                            <li>Push токени за известия</li>
+                            <li>Всички ваши съобщения</li>
+                            <li>Кръговете, на които сте собственик (заедно с членовете и поканите им)</li>
+                            <li>Членството ви в други кръгове</li>
+                          </ul>
+                          <p className="text-sm">За потвърждение, въведете <strong>ИЗТРИЙ</strong> по-долу:</p>
+                          <Input
+                            value={confirmText}
+                            onChange={(e) => setConfirmText(e.target.value)}
+                            placeholder="ИЗТРИЙ"
+                            autoFocus
+                          />
+                        </div>
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
                       <AlertDialogCancel>Отказ</AlertDialogCancel>
                       <AlertDialogAction
                         onClick={handleDeleteAccount}
+                        disabled={confirmText.trim() !== 'ИЗТРИЙ' || isDeleting}
                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       >
-                        Изтрий завинаги
+                        {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Изтрий завинаги'}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
