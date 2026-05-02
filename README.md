@@ -91,6 +91,24 @@ npm run cap:open:ios       # Xcode → Product → Archive
 - **Web dir:** `dist`
 - Конфигурация: `capacitor.config.ts` (root).
 
+## App icons & splash screens
+
+Изходните файлове са в `resources/`:
+- `resources/icon.png` — app иконка (1024x1024)
+- `resources/splash.png` — splash screen (логото центрирано на бял фон)
+
+За да генерираш всички размери за Android и iOS:
+```bash
+npx capacitor-assets generate --iconBackgroundColor '#FFFFFF' --splashBackgroundColor '#FFFFFF'
+```
+Командата автоматично ще попълни `android/app/src/main/res/` и `ios/App/App/Assets.xcassets/`. Вижда се промяната след `npx cap sync`.
+
+За подмяна на иконката: замести `resources/icon.png` (квадратна, ≥1024px) и пусни командата отново.
+
+## Store metadata
+
+Готови текстове за Google Play и App Store (описание, ключови думи, permission strings, screenshot размери) — `resources/STORE_METADATA.md`.
+
 ## Push notifications setup (само за native билдове)
 
 Push известията се изпращат през Firebase Cloud Messaging (FCM) — работи и за Android, и за iOS.
