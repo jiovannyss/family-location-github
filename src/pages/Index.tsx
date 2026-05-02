@@ -17,9 +17,17 @@ import { Button } from '@/components/ui/button';
 const Index = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [selectedCircle, setSelectedCircle] = useState<Circle | null>(null);
+  const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
+  const { circles } = useCircles();
+
+  // Always derive selected circle from the freshest list (so renames propagate)
+  const selectedCircle = useMemo<Circle | null>(() => {
+    if (!selectedCircleId || !circles) return null;
+    return circles.find((c) => c.id === selectedCircleId) || null;
+  }, [circles, selectedCircleId]);
+
   const { members } = useCircleMembers(selectedCircle?.id || null);
 
   // Enable realtime updates for circle members
