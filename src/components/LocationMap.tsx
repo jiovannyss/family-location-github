@@ -302,7 +302,8 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
         layersRef.current = null;
       }
     };
-  }, [clusters, selectedMember, getTimeAgo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clusters, selectedMember]);
 
   useEffect(() => {
     const map = mapRef.current;
