@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { MapPin, Users, Loader2, List, Map as MapIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useCircleMembers } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
@@ -17,13 +18,19 @@ const Index = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [selectedCircle, setSelectedCircle] = useState<Circle | null>(null);
-  const [selectedMember, setSelectedMember] = useState<MemberWithLocation | null>(null);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
   const { members } = useCircleMembers(selectedCircle?.id || null);
 
   // Enable realtime updates for circle members
   const userIds = members?.filter(m => m.status === 'accepted').map(m => m.user_id) || [];
   useRealtimeLocations(userIds);
+
+  // Always derive the selected member from the latest members list
+  const selectedMember = useMemo<MemberWithLocation | null>(() => {
+    if (!selectedMemberId || !members) return null;
+    return members.find((m) => m.id === selectedMemberId) || null;
+  }, [members, selectedMemberId]);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -32,10 +39,12 @@ const Index = () => {
   }, [user, loading, navigate]);
 
   const handleMemberClick = (member: MemberWithLocation) => {
-    if (member.last_location && member.sharing_state?.is_sharing) {
-      setSelectedMember(member);
-      setMobileTab('map');
+    if (!member.last_location || !member.sharing_state?.is_sharing) {
+      toast.info(`${member.profile?.display_name || 'Този член'} не споделя локация в момента`);
+      return;
     }
+    setSelectedMemberId(member.id);
+    setMobileTab('map');
   };
 
   if (loading) {
