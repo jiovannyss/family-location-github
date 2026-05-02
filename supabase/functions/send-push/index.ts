@@ -87,13 +87,28 @@ Deno.serve(async (req) => {
 
   try {
     // ----- Internal secret check -----
-    const expected = Deno.env.get('INTERNAL_PUSH_SECRET');
-    if (!expected) {
-      console.error('INTERNAL_PUSH_SECRET not configured — refusing all requests');
+    // Зареждаме очаквания secret от защитената таблица private.app_secrets
+    // (достъпна само със service-role). Така се елиминира drift между
+    // env var и DB стойност.
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    const { data: secretRow, error: secretErr } = await supabase
+      .schema('private' as never)
+      .from('app_secrets')
+      .select('value')
+      .eq('name', 'internal_push_secret')
+      .maybeSingle();
+
+    if (secretErr || !secretRow?.value) {
+      console.error('Failed to load internal_push_secret:', secretErr);
       return new Response(JSON.stringify({ error: 'server misconfigured' }), {
         status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    const expected = secretRow.value as string;
     const provided = req.headers.get('x-internal-secret') ?? '';
     if (!safeEqual(provided, expected)) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), {
