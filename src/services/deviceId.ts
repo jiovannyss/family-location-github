@@ -1,12 +1,14 @@
 /**
  * Stable per-device identifier.
  *
- * Web: persisted in storage (localStorage today, Capacitor Preferences later).
- * Capacitor: consider @capacitor/device → Device.getId() and store the result here.
+ * Web: persisted in storage (localStorage / Preferences depending on platform).
+ * Native: Device.getId() seeded once and persisted (so it survives reinstall semantics
+ * consistent with our backend assumptions).
  */
+import { Device } from '@capacitor/device';
 import { storage } from './storage';
+import { isNative } from './platform';
 
-// Keep in sync with the legacy key so existing devices keep their id after upgrade.
 const KEY = 'family_location_device_id';
 let cached: string | null = null;
 
@@ -14,25 +16,21 @@ function generateId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return (crypto as Crypto).randomUUID();
   }
-  // Fallback (very unlikely on modern browsers)
   return 'dev-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36);
 }
 
 /**
- * Synchronous accessor (used at startup). Reads localStorage directly so it
- * works during the initial render. The async storage layer is the source of
- * truth otherwise.
+ * Synchronous accessor (used at startup). On native this may return a freshly
+ * generated id on the very first launch; getDeviceIdAsync() will reconcile it
+ * with the persisted/native id shortly after.
  */
 export function getDeviceId(): string {
   if (cached) return cached;
   try {
     const existing = window.localStorage.getItem(KEY);
-    if (existing) {
-      cached = existing;
-      return existing;
-    }
+    if (existing) { cached = existing; return existing; }
     const fresh = generateId();
-    window.localStorage.setItem(KEY, fresh);
+    try { window.localStorage.setItem(KEY, fresh); } catch { /* ignore */ }
     cached = fresh;
     return fresh;
   } catch {
@@ -44,11 +42,18 @@ export function getDeviceId(): string {
 export async function getDeviceIdAsync(): Promise<string> {
   if (cached) return cached;
   const existing = await storage.get(KEY);
-  if (existing) {
-    cached = existing;
-    return existing;
+  if (existing) { cached = existing; return existing; }
+  let fresh: string;
+  if (isNative()) {
+    try {
+      const { identifier } = await Device.getId();
+      fresh = identifier || generateId();
+    } catch {
+      fresh = generateId();
+    }
+  } else {
+    fresh = generateId();
   }
-  const fresh = generateId();
   await storage.set(KEY, fresh);
   cached = fresh;
   return fresh;
