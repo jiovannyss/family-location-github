@@ -241,6 +241,19 @@
 .leaflet-container {
   @apply rounded-xl;
   font-family: inherit;
+  z-index: 0;
+}
+
+/* Гарантираме, че Leaflet pane-ите и контролите остават под модалите (z-50) */
+.leaflet-pane,
+.leaflet-top,
+.leaflet-bottom,
+.leaflet-control {
+  z-index: 1 !important;
+}
+
+.leaflet-popup {
+  z-index: 2 !important;
 }
 
 .leaflet-popup-content-wrapper {
