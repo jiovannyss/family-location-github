@@ -21,6 +21,10 @@ export default function SharingToggle() {
       onSuccess: () => {
         if (checked) {
           toast.success('Споделянето на местоположение е включено');
+          // Ask for notification permission so user can be alerted to messages
+          if (canRequest) {
+            void requestNotifPermission();
+          }
         } else {
           toast.info('Споделянето на местоположение е изключено');
         }
