@@ -2,22 +2,21 @@
  * send-push edge function
  *
  * Извиква се автоматично от DB trigger при INSERT в `messages`.
- * Изпраща push нотификация чрез Firebase Cloud Messaging (FCM HTTP v1 API)
- * до всички устройства на получателя, които имат регистриран push token.
+ * Защитена е с X-Internal-Secret header — извиквания без правилен secret
+ * получават 401, за да не може външен потребител да spam-ва push notifications.
  *
- * Изисква secret: FCM_SERVICE_ACCOUNT_JSON (целият JSON на service account-а
- * от Firebase Console → Project Settings → Service Accounts → Generate new
- * private key). За iOS — Firebase iOS app + APNs Auth Key, конфигурирано там.
+ * Изисква secrets:
+ *   - INTERNAL_PUSH_SECRET — същият, който DB trigger подава (записан в private.app_secrets)
+ *   - FCM_SERVICE_ACCOUNT_JSON — целият JSON на Firebase service account-а
  *
- * Без този secret функцията просто връща 200 без да прави нищо (тихо), за
- * да не блокира INSERT-а на messages в development.
+ * Без FCM_SERVICE_ACCOUNT_JSON функцията връща 200 без действие (за dev).
  */
 // @ts-nocheck — Deno runtime
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-internal-secret',
 };
 
 interface Payload {
@@ -41,7 +40,6 @@ async function getAccessToken(serviceAccount: { client_email: string; private_ke
     btoa(JSON.stringify(obj)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   const unsigned = `${enc(header)}.${enc(claim)}`;
 
-  // Import private key
   const pem = serviceAccount.private_key.replace(/\\n/g, '\n');
   const pkBody = pem
     .replace('-----BEGIN PRIVATE KEY-----', '')
@@ -76,12 +74,35 @@ async function getAccessToken(serviceAccount: { client_email: string; private_ke
   return json.access_token as string;
 }
 
+// Constant-time string comparison за да няма timing attacks при secret check
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
+    // ----- Internal secret check -----
+    const expected = Deno.env.get('INTERNAL_PUSH_SECRET');
+    if (!expected) {
+      console.error('INTERNAL_PUSH_SECRET not configured — refusing all requests');
+      return new Response(JSON.stringify({ error: 'server misconfigured' }), {
+        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const provided = req.headers.get('x-internal-secret') ?? '';
+    if (!safeEqual(provided, expected)) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const payload: Payload = await req.json();
-    if (!payload.recipient_id) {
+    if (!payload.recipient_id || typeof payload.recipient_id !== 'string') {
       return new Response(JSON.stringify({ error: 'recipient_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -138,8 +159,7 @@ Deno.serve(async (req) => {
       } else {
         const txt = await res.text();
         console.error('FCM send failed:', res.status, txt);
-        // 404 / UNREGISTERED → токенът е невалиден, изтриваме го
-        if (res.status === 404 || txt.includes('UNREGISTERED') || txt.includes('NOT_FOUND')) {
+        if (res.status === 404 || txt.includes('UNREGISTERED') || txt.includes('NOT_FOUND') || txt.includes('INVALID_ARGUMENT')) {
           failedTokens.push(t.token);
         }
       }
