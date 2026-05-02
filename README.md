@@ -73,13 +73,77 @@ npm run cap:open:ios       # Xcode → Product → Archive
 
 **Вариант B — автоматичен билд от GitHub (без локална setup):**
 1. Иди в GitHub repo → **Actions**
-2. Избери **"Build Android (manual)"** или **"Build iOS (manual)"**
+2. Избери **"Build Android (manual)"**
 3. Натисни **Run workflow** (от branch `main`)
-4. Изчакай ~5-10 мин и свали готовия артефакт (`.apk` за Android, `.app` за iOS симулатор)
+4. Изчакай ~5-10 мин и свали готовия артефакт:
+   - `debug` → `app-debug.apk` (sideload-able за тестване)
+   - `release-aab` → `app-release.aab` (за Google Play Internal Testing)
 
 > **Production билдове:**
-> - Android `.aab` за Google Play изисква signing keystore (качи го като GitHub Secret и допълни workflow-а).
+> - Android `.aab` за Google Play изисква signing keystore (виж секция **Android signing & Internal Testing** по-долу).
 > - iOS App Store изисква Apple Developer акаунт + сертификат + provisioning profile.
+
+## Android signing & Internal Testing
+
+### 1. Генерирай keystore (еднократно, локално)
+
+⚠️ Този keystore трябва да се пази **завинаги** — без него не можеш да обновяваш приложението в Play Store.
+
+```bash
+keytool -genkey -v \
+  -keystore release.keystore \
+  -alias family-location \
+  -keyalg RSA -keysize 2048 \
+  -validity 10000
+```
+
+Ще те пита за:
+- парола за keystore (запиши я),
+- парола за key (запиши я; може да е същата),
+- име, фирма, държава.
+
+**Backup-ни го веднага** на сигурно място (1Password, HSM, encrypted USB). Никога не го commit-вай в Git.
+
+### 2. Качи го като GitHub Secrets
+
+```bash
+# Кодирай keystore-а в base64 (на macOS/Linux):
+base64 -i release.keystore | tr -d '\n' | pbcopy   # копира в clipboard
+# Или:
+base64 -w 0 release.keystore > release.keystore.b64
+```
+
+В GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**, добави:
+
+| Secret | Стойност |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | base64 на keystore файла |
+| `ANDROID_KEYSTORE_PASSWORD` | парола за keystore |
+| `ANDROID_KEY_ALIAS` | `family-location` (или каквото си задал) |
+| `ANDROID_KEY_PASSWORD` | парола за key |
+
+GitHub Actions автоматично ги маскира в logs. Workflow-ът също ги изтрива от runner-а след билда.
+
+### 3. Билдни signed AAB
+
+GitHub → **Actions → "Build Android (manual)" → Run workflow → build_type: `release-aab`**.
+
+Артефактът `family-location-android-release-aab` съдържа `app-release.aab`.
+
+### 4. Качи в Google Play Internal Testing
+
+1. https://play.google.com/console → Your app → **Testing → Internal testing**
+2. **Create new release** (първия път ще те питат да активираш Play App Signing — приеми; Google ще управлява финалния production ключ, твоят keystore остава upload key).
+3. **Upload** → drag `app-release.aab`.
+4. Release name: напр. `0.1.0-internal-1`. Release notes: кратко описание на промените.
+5. **Save → Review release → Start rollout to Internal testing**.
+6. В **Testers** добави email-и (или Google Group). Тестерите получават линк (`https://play.google.com/apps/internaltest/...`) → opt-in → инсталация през Play Store.
+
+> **Преди първия Internal Testing build** трябва да попълниш в Play Console:
+> - **Privacy Policy URL** → `https://family-location.lovable.app/privacy`
+> - **Data safety form** (декларация за collected data — local + push token)
+> - **App content** → Target audience, Ads, Permissions declaration (особено `ACCESS_BACKGROUND_LOCATION`)
+> - **Content rating** въпросник.
 
 ### Hot-reload по време на разработка
 Раз-коментирай блока `server` в `capacitor.config.ts` — native приложението ще зарежда live preview-то от Lovable вместо bundled `dist/`. Не оставяй активно за store билдове.
