@@ -87,30 +87,28 @@ Deno.serve(async (req) => {
 
   try {
     // ----- Internal secret check -----
-    // Зареждаме очаквания secret от защитената таблица private.app_secrets
-    // (достъпна само със service-role). Така се елиминира drift между
-    // env var и DB стойност.
+    // Сравняваме подадения header с очаквания secret, който се пази в private
+    // схема и се проверява чрез SECURITY DEFINER функция (constant-time compare).
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const { data: secretRow, error: secretErr } = await supabase
-      .schema('private' as never)
-      .from('app_secrets')
-      .select('value')
-      .eq('name', 'internal_push_secret')
-      .maybeSingle();
-
-    if (secretErr || !secretRow?.value) {
-      console.error('Failed to load internal_push_secret:', secretErr);
-      return new Response(JSON.stringify({ error: 'server misconfigured' }), {
-        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const provided = req.headers.get('x-internal-secret') ?? '';
+    if (!provided) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const expected = secretRow.value as string;
-    const provided = req.headers.get('x-internal-secret') ?? '';
-    if (!safeEqual(provided, expected)) {
+
+    const { data: ok, error: secretErr } = await supabase.rpc('verify_internal_push_secret', { _secret: provided });
+    if (secretErr) {
+      console.error('verify_internal_push_secret failed:', secretErr);
+      return new Response(JSON.stringify({ error: 'server error' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!ok) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
