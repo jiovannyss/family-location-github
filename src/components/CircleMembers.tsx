@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Copy, 
-  Check, 
-  UserPlus, 
-  MapPin, 
-  Clock, 
-  Target, 
+import {
+  Copy,
+  Check,
+  UserPlus,
+  MapPin,
+  Clock,
+  Target,
   Loader2,
   Eye,
-  EyeOff
+  EyeOff,
+  MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -249,9 +250,22 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       {member.user_id !== user?.id && (
-                        <SendMessageDialog recipient={member} />
+                        <SendMessageDialog
+                          recipient={member}
+                          trigger={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 gap-1.5 px-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <MessageCircle className="w-3.5 h-3.5" />
+                              <span className="text-xs">Съобщение</span>
+                            </Button>
+                          }
+                        />
                       )}
                       {member.sharing_state?.is_sharing && member.last_location && (
                         <MapPin className="w-5 h-5 text-primary" />
