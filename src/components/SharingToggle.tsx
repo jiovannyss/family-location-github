@@ -31,43 +31,43 @@ export default function SharingToggle() {
 
   return (
     <Card className={`transition-all duration-300 ${isSharing ? 'ring-2 ring-primary shadow-glow' : ''}`}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <motion.div
-              animate={{ 
+              animate={{
                 scale: isSharing ? [1, 1.1, 1] : 1,
               }}
-              transition={{ 
-                duration: 2, 
+              transition={{
+                duration: 2,
                 repeat: isSharing ? Infinity : 0,
                 ease: 'easeInOut'
               }}
-              className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                isSharing 
-                  ? 'bg-primary text-primary-foreground' 
+              className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                isSharing
+                  ? 'bg-primary text-primary-foreground'
                   : 'bg-muted text-muted-foreground'
               }`}
             >
               {isSharing ? (
-                <MapPin className="w-6 h-6" />
+                <MapPin className="w-5 h-5 sm:w-6 sm:h-6" />
               ) : (
-                <MapPinOff className="w-6 h-6" />
+                <MapPinOff className="w-5 h-5 sm:w-6 sm:h-6" />
               )}
             </motion.div>
-            <div>
-              <h3 className="font-medium text-foreground">
+            <div className="min-w-0 flex-1">
+              <h3 className="font-medium text-sm sm:text-base text-foreground leading-tight">
                 Споделяне на местоположение
               </h3>
-              <p className="text-sm text-muted-foreground">
-                {isSharing 
-                  ? 'Членовете на кръга виждат вашата позиция' 
+              <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
+                {isSharing
+                  ? 'Членовете на кръга виждат вашата позиция'
                   : 'Местоположението не се споделя'}
               </p>
             </div>
           </div>
-          
-          <div className="flex items-center gap-3">
+
+          <div className="flex items-center gap-2 flex-shrink-0">
             {isToggling && (
               <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
             )}
@@ -86,8 +86,8 @@ export default function SharingToggle() {
             className="mt-3 p-3 bg-destructive/10 rounded-lg flex items-start gap-2"
           >
             <AlertCircle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-destructive">
-              Достъпът до местоположението е блокиран. 
+            <p className="text-xs sm:text-sm text-destructive">
+              Достъпът до местоположението е блокиран.
               Моля, разрешете го в настройките на браузъра, за да споделяте локацията си.
             </p>
           </motion.div>
@@ -100,7 +100,7 @@ export default function SharingToggle() {
             className="mt-3 p-3 bg-warning/10 rounded-lg flex items-start gap-2"
           >
             <AlertCircle className="w-4 h-4 text-warning mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-warning-foreground">
+            <p className="text-xs sm:text-sm text-warning-foreground break-words">
               Възникна проблем при получаване на местоположението: {error}
             </p>
           </motion.div>
@@ -110,16 +110,16 @@ export default function SharingToggle() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="mt-3 pt-3 border-t border-border text-sm text-muted-foreground"
+            className="mt-3 pt-3 border-t border-border text-xs sm:text-sm text-muted-foreground"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <span>Последна позиция:</span>
-              <span className="font-mono text-xs">
+              <span className="font-mono text-[11px] sm:text-xs">
                 {currentPosition.coords.latitude.toFixed(5)}, {currentPosition.coords.longitude.toFixed(5)}
               </span>
             </div>
             {currentPosition.coords.accuracy && (
-              <div className="flex items-center justify-between mt-1">
+              <div className="flex items-center justify-between gap-2 mt-1 flex-wrap">
                 <span>Точност:</span>
                 <span>±{Math.round(currentPosition.coords.accuracy)} метра</span>
               </div>

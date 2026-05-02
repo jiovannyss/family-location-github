@@ -102,16 +102,17 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-foreground">Вашите кръгове</h2>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h2 className="text-base sm:text-lg font-semibold text-foreground">Вашите кръгове</h2>
         <div className="flex gap-2">
           <Dialog open={isJoinOpen} onOpenChange={setIsJoinOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm">
-                Присъединете се
+              <Button variant="outline" size="sm" className="text-xs sm:text-sm">
+                <span className="hidden sm:inline">Присъединете се</span>
+                <span className="sm:hidden">Присъедини</span>
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Присъединете се към кръг</DialogTitle>
                 <DialogDescription>
@@ -124,10 +125,10 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
                   maxLength={6}
-                  className="text-center text-2xl tracking-widest font-mono"
+                  className="text-center text-xl sm:text-2xl tracking-widest font-mono"
                 />
-                <Button 
-                  onClick={handleJoinCircle} 
+                <Button
+                  onClick={handleJoinCircle}
                   className="w-full"
                   disabled={joinCircle.isPending}
                 >
@@ -143,12 +144,13 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
 
           <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
             <DialogTrigger asChild>
-              <Button size="sm">
+              <Button size="sm" className="text-xs sm:text-sm">
                 <Plus className="w-4 h-4" />
-                Нов кръг
+                <span className="hidden sm:inline">Нов кръг</span>
+                <span className="sm:hidden">Нов</span>
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle>Създайте нов кръг</DialogTitle>
                 <DialogDescription>
@@ -161,8 +163,8 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                   value={newCircleName}
                   onChange={(e) => setNewCircleName(e.target.value)}
                 />
-                <Button 
-                  onClick={handleCreateCircle} 
+                <Button
+                  onClick={handleCreateCircle}
                   className="w-full"
                   disabled={isCreating}
                 >
@@ -207,41 +209,44 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                   }`}
                   onClick={() => onSelectCircle(circle)}
                 >
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <Users className="w-5 h-5 text-primary" />
+                  <CardContent className="p-3 sm:p-4 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                        <Users className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                       </div>
-                      <div>
-                        <h3 className="font-medium text-foreground">{circle.name}</h3>
-                        <p className="text-sm text-muted-foreground">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-medium text-sm sm:text-base text-foreground truncate">{circle.name}</h3>
+                        <p className="text-xs sm:text-sm text-muted-foreground">
                           {circle.owner_id === user?.id ? 'Собственик' : 'Член'}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 flex-shrink-0">
                       {circle.owner_id === user?.id && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="text-muted-foreground hover:text-destructive"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
                               onClick={(e) => e.stopPropagation()}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </AlertDialogTrigger>
-                          <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                          <AlertDialogContent
+                            className="max-w-[calc(100vw-2rem)] sm:max-w-lg"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <AlertDialogHeader>
                               <AlertDialogTitle>Изтриване на кръг</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Сигурни ли сте, че искате да изтриете "{circle.name}"? 
+                                Сигурни ли сте, че искате да изтриете "{circle.name}"?
                                 Това действие е необратимо.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Отказ</AlertDialogCancel>
+                            <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+                              <AlertDialogCancel className="mt-0">Отказ</AlertDialogCancel>
                               <AlertDialogAction
                                 onClick={() => handleDeleteCircle(circle)}
                                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
