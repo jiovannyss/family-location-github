@@ -33,6 +33,27 @@ interface Cluster {
   entries: ClusterEntry[];
 }
 
+function isFiniteCoordinate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function hasRenderableSize(map: L.Map) {
+  const container = map.getContainer();
+  return container.clientWidth > 0 && container.clientHeight > 0;
+}
+
+function safeSetMapView(map: L.Map, lat: number, lng: number, zoom = 15) {
+  if (!isFiniteCoordinate(lat) || !isFiniteCoordinate(lng) || !hasRenderableSize(map)) return false;
+
+  try {
+    map.invalidateSize();
+    map.setView([lat, lng], zoom, { animate: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function createClusterIcon(entries: ClusterEntry[]) {
   const maxShown = 3;
   const shown = entries.slice(0, maxShown);
@@ -333,18 +354,28 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     const map = mapRef.current;
     if (!map) return;
 
-    const isValid = (lat: unknown, lng: unknown): lat is number =>
-      typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng);
+    const isValidLocation = (lat: unknown, lng: unknown) =>
+      isFiniteCoordinate(lat) && isFiniteCoordinate(lng);
 
-    if (selectedMember?.last_location && isValid(selectedMember.last_location.lat, selectedMember.last_location.lng)) {
-      map.flyTo([selectedMember.last_location.lat, selectedMember.last_location.lng], 15, {
-        duration: 1,
+    if (
+      selectedMember?.last_location &&
+      isValidLocation(selectedMember.last_location.lat, selectedMember.last_location.lng)
+    ) {
+      const { lat, lng } = selectedMember.last_location;
+      if (safeSetMapView(map, lat, lng, 15)) {
+        return;
+      }
+
+      requestAnimationFrame(() => {
+        const currentMap = mapRef.current;
+        if (!currentMap) return;
+        safeSetMapView(currentMap, lat, lng, 15);
       });
       return;
     }
 
     const validMembers = membersWithLocation.filter(
-      (m) => m.last_location && isValid(m.last_location.lat, m.last_location.lng)
+      (m) => m.last_location && isValidLocation(m.last_location.lat, m.last_location.lng)
     );
 
     if (validMembers.length > 0) {
