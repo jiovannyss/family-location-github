@@ -62,3 +62,18 @@ export interface MemberWithLocation extends CircleMember {
   sharing_state: SharingState | null;
   last_location: LocationPoint | null;
 }
+
+export type MessageKind = 'question' | 'answer';
+
+export interface Message {
+  id: string;
+  circle_id: string;
+  sender_id: string;
+  recipient_id: string;
+  kind: MessageKind;
+  code: string;
+  body: string;
+  in_reply_to: string | null;
+  read_at: string | null;
+  created_at: string;
+}
