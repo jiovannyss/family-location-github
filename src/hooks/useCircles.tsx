@@ -1,7 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
-import { Circle, CircleMember, Invite, MemberWithLocation } from '@/lib/types';
+import { Circle, Invite, MemberWithLocation } from '@/lib/types';
+import {
+  createCircleApi,
+  deleteCircleApi,
+  listCircles,
+  renameCircleApi,
+} from '@/services/api/circles';
 
 export function useCircles() {
   const { user } = useAuth();
@@ -9,60 +15,30 @@ export function useCircles() {
 
   const { data: circles, isLoading } = useQuery({
     queryKey: ['circles', user?.id],
-    queryFn: async () => {
-      if (!user) return [];
-      
-      const { data, error } = await supabase
-        .from('circles')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      return data as Circle[];
-    },
+    queryFn: () => (user ? listCircles() : Promise.resolve([])),
     enabled: !!user,
   });
 
   const createCircle = useMutation({
     mutationFn: async (name: string) => {
       if (!user) throw new Error('Not authenticated');
-      
-      const { data: circle, error: circleError } = await supabase
-        .from('circles')
-        .insert({ name, owner_id: user.id })
-        .select()
-        .single();
-
-      if (circleError) throw circleError;
-
-      // Add owner as accepted member
-      const { error: memberError } = await supabase
-        .from('circle_members')
-        .insert({
-          circle_id: circle.id,
-          user_id: user.id,
-          role: 'owner',
-          status: 'accepted',
-          joined_at: new Date().toISOString(),
-        });
-
-      if (memberError) throw memberError;
-      return circle;
+      return createCircleApi(name, user.id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['circles', user?.id] });
     },
   });
 
-  const deleteCircle = useMutation({
-    mutationFn: async (circleId: string) => {
-      const { error } = await supabase
-        .from('circles')
-        .delete()
-        .eq('id', circleId);
-
-      if (error) throw error;
+  const renameCircle = useMutation({
+    mutationFn: ({ circleId, name }: { circleId: string; name: string }) =>
+      renameCircleApi(circleId, name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['circles', user?.id] });
     },
+  });
+
+  const deleteCircle = useMutation({
+    mutationFn: (circleId: string) => deleteCircleApi(circleId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['circles', user?.id] });
     },
@@ -72,6 +48,8 @@ export function useCircles() {
     circles,
     isLoading,
     createCircle: createCircle.mutate,
+    renameCircle: renameCircle.mutate,
+    isRenaming: renameCircle.isPending,
     deleteCircle: deleteCircle.mutate,
     isCreating: createCircle.isPending,
   };

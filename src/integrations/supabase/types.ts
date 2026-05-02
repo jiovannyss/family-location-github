@@ -147,6 +147,53 @@ export type Database = {
         }
         Relationships: []
       }
+      messages: {
+        Row: {
+          body: string
+          circle_id: string
+          code: string
+          created_at: string
+          id: string
+          in_reply_to: string | null
+          kind: string
+          read_at: string | null
+          recipient_id: string
+          sender_id: string
+        }
+        Insert: {
+          body: string
+          circle_id: string
+          code: string
+          created_at?: string
+          id?: string
+          in_reply_to?: string | null
+          kind: string
+          read_at?: string | null
+          recipient_id: string
+          sender_id: string
+        }
+        Update: {
+          body?: string
+          circle_id?: string
+          code?: string
+          created_at?: string
+          id?: string
+          in_reply_to?: string | null
+          kind?: string
+          read_at?: string | null
+          recipient_id?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_in_reply_to_fkey"
+            columns: ["in_reply_to"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null

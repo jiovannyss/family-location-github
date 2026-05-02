@@ -2,8 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
-import { SharingState, LocationPoint } from '@/lib/types';
-import { getDeviceId } from '@/lib/deviceId';
+import { SharingState } from '@/lib/types';
+import { getDeviceId } from '@/services/deviceId';
+import { geolocation, type Coords } from '@/services/geolocation';
+import { getDeviceInfo } from '@/services/device';
 
 export function useSharingState() {
   const { user } = useAuth();
@@ -72,9 +74,11 @@ export function useSharingState() {
 export function useLocationTracking() {
   const { user } = useAuth();
   const { isSharing } = useSharingState();
-  const [currentPosition, setCurrentPosition] = useState<GeolocationPosition | null>(null);
+  const [currentPosition, setCurrentPosition] = useState<Coords | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
+  const [permissionState, setPermissionState] = useState<
+    'granted' | 'denied' | 'prompt' | 'unknown' | null
+  >(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isTrackingRef = useRef(false);
   const userIdRef = useRef<string | undefined>(user?.id);
@@ -82,10 +86,13 @@ export function useLocationTracking() {
   const deviceId = getDeviceId();
 
   useEffect(() => {
-    navigator.permissions?.query({ name: 'geolocation' }).then((result) => {
-      setPermissionState(result.state);
-      result.addEventListener('change', () => setPermissionState(result.state));
-    }).catch(() => {});
+    let cancelled = false;
+    geolocation.checkPermission().then((p) => {
+      if (!cancelled) setPermissionState(p.state);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -103,43 +110,35 @@ export function useLocationTracking() {
     isTrackingRef.current = true;
 
     let cancelled = false;
+    const platform = getDeviceInfo().platform;
 
-    const getPos = (): Promise<GeolocationPosition> =>
-      new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 60000,
-        });
-      });
-
-    const sendPos = async (position: GeolocationPosition) => {
+    const sendPos = async (coords: Coords) => {
       const uid = userIdRef.current;
       if (!uid || cancelled) return;
-      const { error: err } = await supabase
-        .from('location_points')
-        .insert({
-          user_id: uid,
-          device_id: deviceId,
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy_m: position.coords.accuracy,
-          recorded_at: new Date().toISOString(),
-          device_platform: navigator.userAgent.includes('Mobile') ? 'mobile' : 'desktop',
-        });
+      const { error: err } = await supabase.from('location_points').insert({
+        user_id: uid,
+        device_id: deviceId,
+        lat: coords.lat,
+        lng: coords.lng,
+        accuracy_m: coords.accuracy,
+        recorded_at: new Date().toISOString(),
+        device_platform: platform,
+      });
       if (err) console.error('Failed to send location:', err);
     };
 
     const doUpdate = async () => {
       if (cancelled) return;
       try {
-        const pos = await getPos();
+        const coords = await geolocation.getCurrentPosition();
         if (cancelled) return;
-        setCurrentPosition(pos);
+        setCurrentPosition(coords);
         setError(null);
-        await sendPos(pos);
-      } catch (err: any) {
-        if (!cancelled) setError(err?.message || 'Location error');
+        await sendPos(coords);
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Location error');
+        }
         console.error('Location update failed:', err);
       }
     };

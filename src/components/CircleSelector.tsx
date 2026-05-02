@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Users, ChevronRight, Loader2, Trash2 } from 'lucide-react';
+import { Plus, Users, ChevronRight, Loader2, Trash2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -30,18 +31,20 @@ import { toast } from 'sonner';
 
 interface CircleSelectorProps {
   selectedCircle: Circle | null;
-  onSelectCircle: (circle: Circle) => void;
+  onSelectCircle: (circle: Circle | null) => void;
 }
 
 export default function CircleSelector({ selectedCircle, onSelectCircle }: CircleSelectorProps) {
-  const { circles, isLoading, createCircle, deleteCircle, isCreating } = useCircles();
+  const { circles, isLoading, createCircle, deleteCircle, renameCircle, isCreating, isRenaming } = useCircles();
   const joinCircle = useJoinCircle();
   const { user } = useAuth();
-  
+
   const [newCircleName, setNewCircleName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Circle | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const handleCreateCircle = () => {
     if (!newCircleName.trim()) {
@@ -83,13 +86,46 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
       onSuccess: () => {
         toast.success(`Кръгът "${circle.name}" е изтрит`);
         if (selectedCircle?.id === circle.id) {
-          onSelectCircle(circles?.find(c => c.id !== circle.id) || null as any);
+          onSelectCircle(circles?.find(c => c.id !== circle.id) ?? null);
         }
       },
       onError: () => {
         toast.error('Грешка при изтриване на кръга');
       },
     });
+  };
+
+  const openRename = (circle: Circle) => {
+    setRenameTarget(circle);
+    setRenameValue(circle.name);
+  };
+
+  const handleRename = () => {
+    if (!renameTarget) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      toast.error('Моля, въведете име');
+      return;
+    }
+    if (trimmed === renameTarget.name) {
+      setRenameTarget(null);
+      return;
+    }
+    renameCircle(
+      { circleId: renameTarget.id, name: trimmed },
+      {
+        onSuccess: (updated) => {
+          toast.success('Името на кръга е обновено');
+          if (selectedCircle?.id === renameTarget.id) {
+            onSelectCircle(updated as Circle);
+          }
+          setRenameTarget(null);
+        },
+        onError: () => {
+          toast.error('Грешка при преименуване');
+        },
+      }
+    );
   };
 
   if (isLoading) {
@@ -223,39 +259,53 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {circle.owner_id === user?.id && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openRename(circle);
+                            }}
+                            aria-label={`Преименувай ${circle.name}`}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent
+                              className="max-w-[calc(100vw-2rem)] sm:max-w-lg"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent
-                            className="max-w-[calc(100vw-2rem)] sm:max-w-lg"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Изтриване на кръг</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Сигурни ли сте, че искате да изтриете "{circle.name}"?
-                                Това действие е необратимо.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
-                              <AlertDialogCancel className="mt-0">Отказ</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteCircle(circle)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                Изтрий
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Изтриване на кръг</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Сигурни ли сте, че искате да изтриете "{circle.name}"?
+                                  Това действие е необратимо.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+                                <AlertDialogCancel className="mt-0">Отказ</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteCircle(circle)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Изтрий
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </>
                       )}
                       <ChevronRight className="w-5 h-5 text-muted-foreground" />
                     </div>
@@ -266,6 +316,42 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
           )}
         </AnimatePresence>
       </div>
+
+      <Dialog
+        open={!!renameTarget}
+        onOpenChange={(o) => {
+          if (!o) setRenameTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Преименуване на кръг</DialogTitle>
+            <DialogDescription>
+              Новото име ще бъде видимо за всички членове на кръга.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="pt-2">
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="Ново име на кръга"
+              maxLength={60}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleRename();
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>
+              Отказ
+            </Button>
+            <Button onClick={handleRename} disabled={isRenaming}>
+              {isRenaming ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Запази'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

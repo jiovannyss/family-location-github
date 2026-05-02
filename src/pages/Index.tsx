@@ -4,7 +4,7 @@ import { MapPin, Users, Loader2, List, Map as MapIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
-import { useCircleMembers } from '@/hooks/useCircles';
+import { useCircleMembers, useCircles } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
 import { Circle, MemberWithLocation } from '@/lib/types';
 import Header from '@/components/Header';
@@ -17,9 +17,17 @@ import { Button } from '@/components/ui/button';
 const Index = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [selectedCircle, setSelectedCircle] = useState<Circle | null>(null);
+  const [selectedCircleId, setSelectedCircleId] = useState<string | null>(null);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
+  const { circles } = useCircles();
+
+  // Always derive selected circle from the freshest list (so renames propagate)
+  const selectedCircle = useMemo<Circle | null>(() => {
+    if (!selectedCircleId || !circles) return null;
+    return circles.find((c) => c.id === selectedCircleId) || null;
+  }, [circles, selectedCircleId]);
+
   const { members } = useCircleMembers(selectedCircle?.id || null);
 
   // Enable realtime updates for circle members
@@ -77,7 +85,7 @@ const Index = () => {
       <div className="bg-card rounded-xl border border-border p-3 sm:p-4 shadow-sm">
         <CircleSelector
           selectedCircle={selectedCircle}
-          onSelectCircle={setSelectedCircle}
+          onSelectCircle={(c) => setSelectedCircleId(c?.id ?? null)}
         />
       </div>
 

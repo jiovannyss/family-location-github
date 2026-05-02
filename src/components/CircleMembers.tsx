@@ -29,6 +29,7 @@ import { Circle, MemberWithLocation } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { bg } from 'date-fns/locale';
 import { toast } from 'sonner';
+import SendMessageDialog from './SendMessageDialog';
 
 interface CircleMembersProps {
   circle: Circle;
@@ -248,11 +249,14 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                       </div>
                     </div>
 
-                    {member.sharing_state?.is_sharing && member.last_location && (
-                      <div className="flex-shrink-0">
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {member.user_id !== user?.id && (
+                        <SendMessageDialog recipient={member} />
+                      )}
+                      {member.sharing_state?.is_sharing && member.last_location && (
                         <MapPin className="w-5 h-5 text-primary" />
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
