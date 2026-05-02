@@ -217,6 +217,13 @@ export default function Auth() {
                 )}
               </button>
             </div>
+
+            <p className="mt-4 text-center text-[11px] text-muted-foreground leading-relaxed">
+              Регистрирайки се, се съгласявате с{' '}
+              <a href="/terms" className="underline hover:text-primary">Условията за ползване</a>
+              {' '}и{' '}
+              <a href="/privacy" className="underline hover:text-primary">Политиката за поверителност</a>.
+            </p>
           </CardContent>
         </Card>
       </motion.div>

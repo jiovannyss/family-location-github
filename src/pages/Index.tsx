@@ -13,7 +13,6 @@ import CircleMembers from '@/components/CircleMembers';
 import SharingToggle from '@/components/SharingToggle';
 import LocationMap from '@/components/LocationMap';
 import NotificationPermissionPrompt from '@/components/NotificationPermissionPrompt';
-import { push } from '@/services/push';
 import { Button } from '@/components/ui/button';
 
 const Index = () => {
@@ -48,11 +47,8 @@ const Index = () => {
     }
   }, [user, loading, navigate]);
 
-  // Регистрация за push notifications (само на native — на web е no-op)
-  useEffect(() => {
-    if (!user) return;
-    void push.registerForUser(user.id);
-  }, [user?.id]);
+  // Push notifications се управляват глобално в `src/services/push.ts`
+  // (auth-state listener регистрира/чисти tokens автоматично).
 
   const handleMemberClick = (member: MemberWithLocation) => {
     if (!member.last_location || !member.sharing_state?.is_sharing) {
