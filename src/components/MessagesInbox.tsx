@@ -91,8 +91,13 @@ export default function MessagesInbox() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative h-10 w-10" aria-label="Съобщения">
-          <Bell className="w-5 h-5" />
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`relative h-10 w-10 ${unreadCount > 0 ? 'text-primary' : 'text-foreground'}`}
+          aria-label={unreadCount > 0 ? `${unreadCount} непрочетени съобщения` : 'Съобщения'}
+        >
+          <Bell className={`w-5 h-5 ${unreadCount > 0 ? 'animate-pulse' : ''}`} />
           {unreadCount > 0 && (
             <Badge
               className="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center"
