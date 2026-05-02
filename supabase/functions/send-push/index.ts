@@ -87,15 +87,28 @@ Deno.serve(async (req) => {
 
   try {
     // ----- Internal secret check -----
-    const expected = Deno.env.get('INTERNAL_PUSH_SECRET');
-    if (!expected) {
-      console.error('INTERNAL_PUSH_SECRET not configured — refusing all requests');
-      return new Response(JSON.stringify({ error: 'server misconfigured' }), {
-        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    // Сравняваме подадения header с очаквания secret, който се пази в private
+    // схема и се проверява чрез SECURITY DEFINER функция (constant-time compare).
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    const provided = req.headers.get('x-internal-secret') ?? '';
+    if (!provided) {
+      return new Response(JSON.stringify({ error: 'unauthorized' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const provided = req.headers.get('x-internal-secret') ?? '';
-    if (!safeEqual(provided, expected)) {
+
+    const { data: ok, error: secretErr } = await supabase.rpc('verify_internal_push_secret', { _secret: provided });
+    if (secretErr) {
+      console.error('verify_internal_push_secret failed:', secretErr);
+      return new Response(JSON.stringify({ error: 'server error' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!ok) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -108,10 +121,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // (supabase client е създаден по-горе при secret check-а)
 
     const { data: tokens, error } = await supabase
       .from('push_tokens')

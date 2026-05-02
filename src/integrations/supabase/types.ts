@@ -293,6 +293,10 @@ export type Database = {
         Args: { _circle_id: string; _user_id: string }
         Returns: boolean
       }
+      verify_internal_push_secret: {
+        Args: { _secret: string }
+        Returns: boolean
+      }
     }
     Enums: {
       member_status: "invited" | "accepted"
