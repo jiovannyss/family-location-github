@@ -3,15 +3,13 @@ import type { CapacitorConfig } from '@capacitor/cli';
 /**
  * Capacitor конфигурация за Семейна Локация.
  *
- * Production билдове опаковат bundled `dist/` (т.е. версията, която е била билд-ната
- * последно). За да обновиш мобилните приложения с последните промени от Lovable:
+ * Production билдове опаковат bundled `dist/`. За да обновиш мобилните приложения:
  *   1) `git pull`
  *   2) `npm run mobile:build`   (= vite build && cap sync)
  *   3) `npx cap open ios` или `npx cap open android` и направи нов архив/билд
  *
  * За hot-reload по време на разработка — раз-коментирай блока `server` по-долу.
- * Той кара native приложението да зарежда live preview URL-а от Lovable (нямаш нужда
- * от rebuild при всяка промяна), но НЕ го оставяй активен за store билдове.
+ * НЕ оставяй активен за store билдове.
  */
 const config: CapacitorConfig = {
   appId: 'app.lovable.eaf9a1a1e6d44660bcc5cee4a68bcf76',
@@ -26,6 +24,10 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: false,
+    // Production: изключва Chrome DevTools достъп до WebView съдържанието на устройството.
+    // Изисква се за store билдове (security best practice; Apple/Google изискват
+    // приложения да не са remotely debuggable в production).
+    webContentsDebuggingEnabled: false,
   },
   plugins: {
     SplashScreen: {
