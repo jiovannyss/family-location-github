@@ -303,16 +303,23 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     const map = mapRef.current;
     if (!map) return;
 
-    if (selectedMember?.last_location) {
+    const isValid = (lat: unknown, lng: unknown): lat is number =>
+      typeof lat === 'number' && typeof lng === 'number' && Number.isFinite(lat) && Number.isFinite(lng);
+
+    if (selectedMember?.last_location && isValid(selectedMember.last_location.lat, selectedMember.last_location.lng)) {
       map.flyTo([selectedMember.last_location.lat, selectedMember.last_location.lng], 15, {
         duration: 1,
       });
       return;
     }
 
-    if (membersWithLocation.length > 0) {
+    const validMembers = membersWithLocation.filter(
+      (m) => m.last_location && isValid(m.last_location.lat, m.last_location.lng)
+    );
+
+    if (validMembers.length > 0) {
       const bounds = L.latLngBounds(
-        membersWithLocation.map((m) => [m.last_location!.lat, m.last_location!.lng] as [number, number])
+        validMembers.map((m) => [m.last_location!.lat, m.last_location!.lng] as [number, number])
       );
       map.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
       return;
