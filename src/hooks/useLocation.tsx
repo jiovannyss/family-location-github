@@ -1,41 +1,53 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { SharingState, LocationPoint } from '@/lib/types';
+import { getDeviceId } from '@/lib/deviceId';
 
 export function useSharingState() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const deviceId = getDeviceId();
 
+  // sharing_state for THIS device only
   const { data: sharingState, isLoading } = useQuery({
-    queryKey: ['sharing-state', user?.id],
+    queryKey: ['sharing-state', user?.id, deviceId],
     queryFn: async () => {
       if (!user) return null;
-      
+
       const { data, error } = await supabase
         .from('sharing_state')
         .select('*')
         .eq('user_id', user.id)
+        .eq('device_id', deviceId)
         .maybeSingle();
 
       if (error) throw error;
       return data as SharingState | null;
     },
     enabled: !!user,
+    // Re-check periodically so this device notices when another device took over
+    refetchInterval: 30000,
   });
 
   const toggleSharing = useMutation({
     mutationFn: async (isSharing: boolean) => {
       if (!user) throw new Error('Not authenticated');
-      
+
+      // Upsert this device's sharing row. A DB trigger will deactivate other
+      // devices for the same user when is_sharing flips to true.
       const { data, error } = await supabase
         .from('sharing_state')
-        .upsert({
-          user_id: user.id,
-          is_sharing: isSharing,
-          updated_at: new Date().toISOString(),
-        })
+        .upsert(
+          {
+            user_id: user.id,
+            device_id: deviceId,
+            is_sharing: isSharing,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,device_id' }
+        )
         .select()
         .single();
 
@@ -43,7 +55,8 @@ export function useSharingState() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sharing-state', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['sharing-state'] });
+      queryClient.invalidateQueries({ queryKey: ['circle-members'] });
     },
   });
 
@@ -66,9 +79,9 @@ export function useLocationTracking() {
   const isTrackingRef = useRef(false);
   const userIdRef = useRef<string | undefined>(user?.id);
   userIdRef.current = user?.id;
+  const deviceId = getDeviceId();
 
   useEffect(() => {
-    // Check permission on mount
     navigator.permissions?.query({ name: 'geolocation' }).then((result) => {
       setPermissionState(result.state);
       result.addEventListener('change', () => setPermissionState(result.state));
@@ -76,7 +89,6 @@ export function useLocationTracking() {
   }, []);
 
   useEffect(() => {
-    // Clean up any existing tracking
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -87,7 +99,6 @@ export function useLocationTracking() {
       return;
     }
 
-    // Prevent double-start from StrictMode
     if (isTrackingRef.current) return;
     isTrackingRef.current = true;
 
@@ -109,6 +120,7 @@ export function useLocationTracking() {
         .from('location_points')
         .insert({
           user_id: uid,
+          device_id: deviceId,
           lat: position.coords.latitude,
           lng: position.coords.longitude,
           accuracy_m: position.coords.accuracy,
@@ -143,7 +155,7 @@ export function useLocationTracking() {
         intervalRef.current = null;
       }
     };
-  }, [isSharing, user?.id]);
+  }, [isSharing, user?.id, deviceId]);
 
   return {
     currentPosition,
@@ -169,7 +181,7 @@ export function useRealtimeLocations(userIds: string[]) {
           table: 'location_points',
           filter: `user_id=in.(${userIds.join(',')})`,
         },
-        (payload) => {
+        () => {
           queryClient.invalidateQueries({ queryKey: ['circle-members'] });
         }
       )
