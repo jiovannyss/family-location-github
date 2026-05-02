@@ -12,6 +12,7 @@ import CircleSelector from '@/components/CircleSelector';
 import CircleMembers from '@/components/CircleMembers';
 import SharingToggle from '@/components/SharingToggle';
 import LocationMap from '@/components/LocationMap';
+import NotificationPermissionPrompt from '@/components/NotificationPermissionPrompt';
 import { Button } from '@/components/ui/button';
 
 const Index = () => {
@@ -80,6 +81,7 @@ const Index = () => {
       animate={{ opacity: 1, x: 0 }}
       className="space-y-4 sm:space-y-6"
     >
+      <NotificationPermissionPrompt />
       <SharingToggle />
 
       <div className="bg-card rounded-xl border border-border p-3 sm:p-4 shadow-sm">

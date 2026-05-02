@@ -3,11 +3,13 @@ import { MapPin, MapPinOff, Loader2, AlertCircle } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent } from '@/components/ui/card';
 import { useSharingState, useLocationTracking } from '@/hooks/useLocation';
+import { useNotificationPermission } from '@/hooks/useNotificationPermission';
 import { toast } from 'sonner';
 
 export default function SharingToggle() {
   const { isSharing, toggleSharing, isToggling } = useSharingState();
   const { permissionState, currentPosition, error } = useLocationTracking();
+  const { canRequest, request: requestNotifPermission } = useNotificationPermission();
 
   const handleToggle = async (checked: boolean) => {
     if (checked && permissionState === 'denied') {
@@ -19,6 +21,10 @@ export default function SharingToggle() {
       onSuccess: () => {
         if (checked) {
           toast.success('Споделянето на местоположение е включено');
+          // Ask for notification permission so user can be alerted to messages
+          if (canRequest) {
+            void requestNotifPermission();
+          }
         } else {
           toast.info('Споделянето на местоположение е изключено');
         }
