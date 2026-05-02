@@ -85,7 +85,7 @@ const Index = () => {
       <div className="bg-card rounded-xl border border-border p-3 sm:p-4 shadow-sm">
         <CircleSelector
           selectedCircle={selectedCircle}
-          onSelectCircle={setSelectedCircle}
+          onSelectCircle={(c) => setSelectedCircleId(c?.id ?? null)}
         />
       </div>
 
