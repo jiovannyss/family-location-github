@@ -35,61 +35,70 @@ npm run preview  # preview built output
 
 ## Архитектура — service layer
 
-Browser-only API-та НЕ се ползват директно в компонентите. Всеки такъв достъп минава през `src/services/*`, за да може лесно да се замени с Capacitor plugin:
+Browser-only API-та НЕ се ползват директно в компонентите. Всеки такъв достъп минава през `src/services/*`. Service-ите автоматично избират web или Capacitor (native) имплементация чрез `src/services/platform.ts` (`Capacitor.isNativePlatform()`):
 
-| Service | Web implementation | Capacitor replacement |
+| Service | Web | Native (Capacitor) |
 |---|---|---|
-| `src/services/storage.ts` | `localStorage` | `@capacitor/preferences` |
-| `src/services/deviceId.ts` | crypto.randomUUID + storage | `@capacitor/device` Device.getId() |
-| `src/services/device.ts` | userAgent sniffing | `@capacitor/device` Device.getInfo() |
-| `src/services/geolocation.ts` | `navigator.geolocation` (foreground) | `@capacitor/geolocation` + `@capacitor-community/background-geolocation` за background tracking |
-| `src/services/notifications.ts` | sonner toast + Web Notifications | `@capacitor/push-notifications` + `@capacitor/local-notifications` + Firebase Cloud Messaging |
-| `src/services/api/*.ts` | Supabase JS client | без промяна (Supabase работи в WebView) |
+| `storage.ts` | `localStorage` | `@capacitor/preferences` |
+| `deviceId.ts` | `crypto.randomUUID` + storage | `@capacitor/device` Device.getId() |
+| `device.ts` | userAgent sniffing | `@capacitor/device` Device.getInfo() |
+| `geolocation.ts` | `navigator.geolocation` | `@capacitor/geolocation` (foreground). Background: добави по-късно `@capacitor-community/background-geolocation` |
+| `notifications.ts` | sonner toast + Web Notifications | sonner toast + `@capacitor/local-notifications`. Push: добавя се отделно с FCM/APNs |
+| `services/api/*.ts` | Supabase JS client | без промяна (работи в WebView) |
 
-**Правило:** компоненти и хукове викат само service-ите, никога директно `localStorage`, `navigator.geolocation`, `Notification`, `window.location` и т.н.
+**Правило:** компоненти и хукове викат само service-ите, никога директно `localStorage`, `navigator.geolocation`, `Notification`, и т.н.
 
-## Capacitor readiness notes
+## Мобилни приложения (Capacitor) — workflow за rebuild
 
-Когато решиш да направиш native build:
+Уеб версията се деплойва автоматично в SuperHosting при всеки push в `main` (виж `.github/workflows/deploy.yml`). Същият код се пакетира в Android/iOS приложение чрез Capacitor — затова всяка промяна, направена в Lovable, автоматично е готова за следващия мобилен билд.
 
-1. `npm install @capacitor/core @capacitor/cli @capacitor/ios @capacitor/android`
-2. `npx cap init` с:
-   - **App ID:** `app.lovable.eaf9a1a1e6d44660bcc5cee4a68bcf76`
-   - **App name:** `family-location`
-3. `npx cap add ios` и/или `npx cap add android`
-4. `npm run build && npx cap sync`
-5. `npx cap run ios` / `npx cap run android`
+### Първоначална настройка (еднократно, на твоя Mac/PC)
+```bash
+git clone <repo>
+npm install
+npx cap add android      # ако искаш Android
+npx cap add ios          # ако искаш iOS (само на Mac с Xcode)
+npm run mobile:build     # = vite build && cap sync
+```
 
-**Какво вече е готово:**
-- ✅ Service layer за geolocation, notifications, storage, device
-- ✅ `BrowserRouter` с SPA fallback (работи в WebView)
-- ✅ Mobile-first responsive UI (lg breakpoint)
-- ✅ Safe-area CSS (`env(safe-area-inset-*)`) за notch/status bar
-- ✅ `viewport-fit=cover`
-- ✅ `touch-action: manipulation` срещу double-tap zoom
-- ✅ Manifest без service worker (за да не пречи на Capacitor)
-- ✅ Persistent device id за multi-device sharing
-- ✅ Централизиран API layer в `src/services/api/`
-- ✅ Без hardcoded URLs/secrets
+### Когато решиш да пуснеш нова версия на мобилните приложения
+**Вариант A — локално (пълен контрол, нужни са Xcode/Android Studio):**
+```bash
+git pull
+npm install
+npm run mobile:build
+npm run cap:open:android   # Android Studio → Build → Generate Signed Bundle/APK
+npm run cap:open:ios       # Xcode → Product → Archive
+```
 
-**Какво ще трябва да смениш при native:**
-- `src/services/geolocation.ts` → използвай `@capacitor/geolocation`. За background tracking добави `@capacitor-community/background-geolocation` и викай `sendPos` от неговия callback. Backend (`location_points` таблицата) и UI няма нужда от промяна.
-- `src/services/notifications.ts` → добави Push Notifications listener-и; backend hook за изпращане на push при `INSERT` в `messages` таблицата (Supabase Edge Function + FCM).
-- `src/services/storage.ts` → `@capacitor/preferences` (запази същия ключ `family_location_device_id` за миграция).
-- `src/services/device.ts` → `Device.getInfo().platform` връща native стойност.
+**Вариант B — автоматичен билд от GitHub (без локална setup):**
+1. Иди в GitHub repo → **Actions**
+2. Избери **"Build Android (manual)"** или **"Build iOS (manual)"**
+3. Натисни **Run workflow** (от branch `main`)
+4. Изчакай ~5-10 мин и свали готовия артефакт (`.apk` за Android, `.app` за iOS симулатор)
 
-## Browser-specific участъци
+> **Production билдове:**
+> - Android `.aab` за Google Play изисква signing keystore (качи го като GitHub Secret и допълни workflow-а).
+> - iOS App Store изисква Apple Developer акаунт + сертификат + provisioning profile.
 
-Всички такива места са изолирани в `src/services/*` и са маркирани с коментар. Ако намериш `localStorage`/`navigator.geolocation`/`Notification` извън `src/services/`, това е bug.
+### Hot-reload по време на разработка
+Раз-коментирай блока `server` в `capacitor.config.ts` — native приложението ще зарежда live preview-то от Lovable вместо bundled `dist/`. Не оставяй активно за store билдове.
+
+## Capacitor конфигурация
+
+- **App ID:** `app.lovable.eaf9a1a1e6d44660bcc5cee4a68bcf76`
+- **App name:** `family-location`
+- **Web dir:** `dist`
+- Конфигурация: `capacitor.config.ts` (root).
 
 ## Database / RLS
 
-- Локацията е видима само за приети членове на общ кръг, които активно споделят (виж RLS policies на `location_points` и `sharing_state`).
-- Съобщенията са видими само за участниците в разговора, и само ако и двамата са приети членове на същия кръг.
-- SECURITY DEFINER функциите (`is_circle_member`, `is_accepted_circle_mate`) предотвратяват infinite recursion в RLS.
+- Локацията е видима само за приети членове на общ кръг, които активно споделят.
+- Съобщенията са видими само за участниците в разговора и само ако са в общ кръг.
+- SECURITY DEFINER функциите предотвратяват infinite recursion в RLS.
 
 ## PWA
 
 - `public/manifest.json` с икони и theme color.
-- **Без service worker** — съзнателно решение, за да не конфликтира с Capacitor WebView и Lovable preview-то.
-- App-ът може да се добави към Home Screen на iOS/Android през браузъра.
+- **Без service worker** — за да не конфликтира с Capacitor WebView и Lovable preview.
+
