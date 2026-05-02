@@ -102,7 +102,7 @@ export function useCircleMembers(circleId: string | null) {
 
       if (profilesError) throw profilesError;
 
-      // Get sharing states
+      // Get sharing states (one row per device — pick the active one per user)
       const { data: sharingStates, error: sharingError } = await supabase
         .from('sharing_state')
         .select('*')
@@ -110,10 +110,27 @@ export function useCircleMembers(circleId: string | null) {
 
       if (sharingError) throw sharingError;
 
-      // Get last locations for sharing members
-      const sharingUserIds = sharingStates?.filter(s => s.is_sharing).map(s => s.user_id) || [];
+      // Aggregate: a user is "sharing" if ANY of their devices has is_sharing = true.
+      // Keep the most recently updated active row (or the most recent inactive one as fallback).
+      const activeByUser = new Map<string, typeof sharingStates[number]>();
+      const latestByUser = new Map<string, typeof sharingStates[number]>();
+      for (const s of sharingStates || []) {
+        const latest = latestByUser.get(s.user_id);
+        if (!latest || new Date(s.updated_at) > new Date(latest.updated_at)) {
+          latestByUser.set(s.user_id, s);
+        }
+        if (s.is_sharing) {
+          const active = activeByUser.get(s.user_id);
+          if (!active || new Date(s.updated_at) > new Date(active.updated_at)) {
+            activeByUser.set(s.user_id, s);
+          }
+        }
+      }
+
+      // Get last locations for users who have at least one sharing device
+      const sharingUserIds = Array.from(activeByUser.keys());
       let locations: any[] = [];
-      
+
       if (sharingUserIds.length > 0) {
         const { data: locationsData, error: locationsError } = await supabase
           .from('location_points')
@@ -128,15 +145,25 @@ export function useCircleMembers(circleId: string | null) {
       // Combine data
       const membersWithData: MemberWithLocation[] = membersData.map(member => {
         const profile = profiles?.find(p => p.user_id === member.user_id);
-        const sharingState = sharingStates?.find(s => s.user_id === member.user_id);
-        const lastLocation = locations?.find(l => l.user_id === member.user_id);
+        const sharingState =
+          activeByUser.get(member.user_id) ||
+          latestByUser.get(member.user_id) ||
+          null;
+        // Prefer location from the active device when known
+        const activeDeviceId = activeByUser.get(member.user_id)?.device_id;
+        const lastLocation =
+          (activeDeviceId
+            ? locations.find(l => l.user_id === member.user_id && l.device_id === activeDeviceId)
+            : null) ||
+          locations.find(l => l.user_id === member.user_id) ||
+          null;
 
         return {
           ...member,
           status: member.status as 'invited' | 'accepted',
           profile: profile!,
-          sharing_state: sharingState || null,
-          last_location: lastLocation || null,
+          sharing_state: sharingState,
+          last_location: lastLocation,
         };
       });
 
