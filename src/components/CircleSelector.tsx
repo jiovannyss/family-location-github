@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plus, Users, ChevronRight, Loader2, Trash2 } from 'lucide-react';
+import { Plus, Users, ChevronRight, Loader2, Trash2, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -34,14 +35,16 @@ interface CircleSelectorProps {
 }
 
 export default function CircleSelector({ selectedCircle, onSelectCircle }: CircleSelectorProps) {
-  const { circles, isLoading, createCircle, deleteCircle, isCreating } = useCircles();
+  const { circles, isLoading, createCircle, deleteCircle, renameCircle, isCreating, isRenaming } = useCircles();
   const joinCircle = useJoinCircle();
   const { user } = useAuth();
-  
+
   const [newCircleName, setNewCircleName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isJoinOpen, setIsJoinOpen] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<Circle | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const handleCreateCircle = () => {
     if (!newCircleName.trim()) {
