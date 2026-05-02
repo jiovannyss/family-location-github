@@ -1,1 +1,4 @@
 project_id = "mrcetakiztvbdwaduvco"
+
+[functions.send-push]
+verify_jwt = false
