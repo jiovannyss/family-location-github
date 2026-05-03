@@ -159,6 +159,8 @@ export default function Settings() {
             </CardContent>
           </Card>
 
+          <PushDiagnostics />
+
           {/* Legal links */}
           <Card>
             <CardHeader>
