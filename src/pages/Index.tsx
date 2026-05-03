@@ -181,9 +181,11 @@ const Index = () => {
           </Button>
         </div>
 
-        {/* Desktop: two columns */}
-        <div className="hidden lg:grid lg:grid-cols-[380px,1fr] gap-6">
-          {sidebarContent}
+        {/* Desktop: two columns — map fixed to viewport, sidebar scrolls */}
+        <div className="hidden lg:grid lg:grid-cols-[380px,1fr] gap-6 lg:h-[calc(100vh-4rem-env(safe-area-inset-top)-3rem)]">
+          <div className="overflow-y-auto pr-2 -mr-2">
+            {sidebarContent}
+          </div>
           {mapContent}
         </div>
 
