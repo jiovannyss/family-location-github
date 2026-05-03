@@ -85,16 +85,20 @@ function safeEqual(a: string, b: string): boolean {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
+  const reqId = crypto.randomUUID().slice(0, 8);
+  const log = (msg: string, extra?: unknown) =>
+    console.log(`[send-push ${reqId}] ${msg}`, extra ?? '');
+
   try {
-    // ----- Internal secret check -----
-    // Сравняваме подадения header с очаквания secret, който се пази в private
-    // схема и се проверява чрез SECURITY DEFINER функция (constant-time compare).
+    log('invoked');
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
     const provided = req.headers.get('x-internal-secret') ?? '';
+    log('internal-secret header present:', !!provided);
     if (!provided) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -103,11 +107,12 @@ Deno.serve(async (req) => {
 
     const { data: ok, error: secretErr } = await supabase.rpc('verify_internal_push_secret', { _secret: provided });
     if (secretErr) {
-      console.error('verify_internal_push_secret failed:', secretErr);
+      log('verify_internal_push_secret RPC error', secretErr);
       return new Response(JSON.stringify({ error: 'server error' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    log('internal-secret valid:', ok);
     if (!ok) {
       return new Response(JSON.stringify({ error: 'unauthorized' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -115,19 +120,19 @@ Deno.serve(async (req) => {
     }
 
     const payload: Payload = await req.json();
+    log('payload', { recipient_id: payload.recipient_id, title: payload.title });
     if (!payload.recipient_id || typeof payload.recipient_id !== 'string') {
       return new Response(JSON.stringify({ error: 'recipient_id required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // (supabase client е създаден по-горе при secret check-а)
-
     const { data: tokens, error } = await supabase
       .from('push_tokens')
       .select('token, platform')
       .eq('user_id', payload.recipient_id);
     if (error) throw error;
+    log(`tokens found: ${tokens?.length ?? 0}`);
     if (!tokens || tokens.length === 0) {
       return new Response(JSON.stringify({ sent: 0, reason: 'no tokens' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -136,7 +141,7 @@ Deno.serve(async (req) => {
 
     const saJson = Deno.env.get('FCM_SERVICE_ACCOUNT_JSON');
     if (!saJson) {
-      console.warn('FCM_SERVICE_ACCOUNT_JSON not configured — skipping push send');
+      log('FCM_SERVICE_ACCOUNT_JSON MISSING — push not configured');
       return new Response(JSON.stringify({ sent: 0, reason: 'fcm not configured' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -144,6 +149,7 @@ Deno.serve(async (req) => {
     const sa = JSON.parse(saJson);
     const accessToken = await getAccessToken(sa);
     const projectId = sa.project_id;
+    log('fcm project', projectId);
 
     let sent = 0;
     const failedTokens: string[] = [];
@@ -164,11 +170,11 @@ Deno.serve(async (req) => {
           }),
         }
       );
+      const txt = await res.text();
+      log(`FCM response status=${res.status} body=${txt.slice(0, 300)}`);
       if (res.ok) {
         sent++;
       } else {
-        const txt = await res.text();
-        console.error('FCM send failed:', res.status, txt);
         if (res.status === 404 || txt.includes('UNREGISTERED') || txt.includes('NOT_FOUND') || txt.includes('INVALID_ARGUMENT')) {
           failedTokens.push(t.token);
         }
@@ -176,6 +182,7 @@ Deno.serve(async (req) => {
     }
 
     if (failedTokens.length > 0) {
+      log(`removing ${failedTokens.length} stale tokens`);
       await supabase.from('push_tokens').delete().in('token', failedTokens);
     }
 
@@ -183,7 +190,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (e) {
-    console.error('send-push error:', e);
+    console.error(`[send-push ${reqId}] error:`, e);
     return new Response(JSON.stringify({ error: (e as Error).message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
