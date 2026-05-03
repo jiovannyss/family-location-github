@@ -13,7 +13,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
  */
 const config: CapacitorConfig = {
   appId: 'app.lovable.eaf9a1a1e6d44660bcc5cee4a68bcf76',
-  appName: 'family-location',
+  appName: 'Семейна локация',
   webDir: 'dist',
   // server: {
   //   url: 'https://eaf9a1a1-e6d4-4660-bcc5-cee4a68bcf76.lovableproject.com?forceHideBadge=true',

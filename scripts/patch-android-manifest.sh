@@ -60,6 +60,16 @@ if grep -q 'android:allowBackup="true"' "$MANIFEST"; then
   echo "  ~ allowBackup=false"
 fi
 
+# 4. App label (под иконата на хоум екрана) → "Семейна локация"
+STRINGS="android/app/src/main/res/values/strings.xml"
+if [ -f "$STRINGS" ]; then
+  # Заменя app_name и title_activity_main стойностите
+  sed -i.bak -E 's|(<string name="app_name">)[^<]*(</string>)|\1Семейна локация\2|' "$STRINGS"
+  sed -i.bak -E 's|(<string name="title_activity_main">)[^<]*(</string>)|\1Семейна локация\2|' "$STRINGS"
+  rm -f "$STRINGS.bak"
+  echo "  ~ app_name=Семейна локация"
+fi
+
 # Cleanup backup files
 rm -f "$MANIFEST.bak"
 
