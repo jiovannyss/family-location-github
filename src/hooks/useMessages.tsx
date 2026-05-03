@@ -21,35 +21,46 @@ export function useMessages() {
     enabled: !!user,
   });
 
-  // Realtime: refresh on any change involving the current user
+  // Realtime: refresh on any change involving the current user.
+  // ВАЖНО: уникално име на channel за всеки mount (иначе при 4 компонента,
+  // ползващи useMessages едновременно, Supabase отказва дублиращи се subscribe-и).
   useEffect(() => {
     if (!user) return;
+    const channelName = `messages:${user.id}:${Math.random().toString(36).slice(2, 8)}`;
     const channel = supabase
-      .channel(`messages:${user.id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `recipient_id=eq.${user.id}` },
         (payload) => {
-          const row = (payload.new || payload.old) as MessageRow | undefined;
-          if (!row) return;
-          if (row.sender_id !== user.id && row.recipient_id !== user.id) return;
-
-          // Notify on incoming message addressed to me
-          if (
-            payload.eventType === 'INSERT' &&
-            row.recipient_id === user.id &&
-            row.sender_id !== user.id
-          ) {
-            notifications.notify({
-              title: 'Ново съобщение',
-              body: row.body,
-            });
+          const row = payload.new as MessageRow;
+          console.log('[realtime] message INSERT for me:', row?.id);
+          if (row && row.sender_id !== user.id) {
+            notifications.notify({ title: 'Ново съобщение', body: row.body });
           }
-
           queryClient.invalidateQueries({ queryKey: ['messages', user.id] });
         }
       )
-      .subscribe();
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `sender_id=eq.${user.id}` },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['messages', user.id] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        (payload) => {
+          const row = payload.new as MessageRow;
+          if (row && (row.sender_id === user.id || row.recipient_id === user.id)) {
+            queryClient.invalidateQueries({ queryKey: ['messages', user.id] });
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log(`[realtime] ${channelName} status:`, status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
