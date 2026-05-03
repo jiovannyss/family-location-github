@@ -18,13 +18,18 @@ async function bootstrap() {
   // localStorage синхронно при импорт.
   try { await hydrateAuthFromNativeStorage(); } catch (e) { console.warn(e); }
   startAuthPersistenceMirror();
-  const { default: App } = await import("./App.tsx");
+  const [{ default: App }, { ensurePushLifecycleStarted }] = await Promise.all([
+    import("./App.tsx"),
+    import("./services/push"),
+  ]);
 
   createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
   );
+
+  ensurePushLifecycleStarted();
 }
 
 void bootstrap();
