@@ -120,7 +120,7 @@ const Index = () => {
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="bg-card rounded-xl border border-border overflow-hidden shadow-sm h-[calc(100vh-200px)] lg:h-auto lg:min-h-[calc(100vh-140px)]"
+      className="bg-card rounded-xl border border-border overflow-hidden shadow-sm h-[calc(100vh-200px)] lg:h-full"
     >
       {selectedCircle && members && members.length > 0 ? (
         <LocationMap
