@@ -26,7 +26,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useCircles, useJoinCircle } from '@/hooks/useCircles';
 import { useAuth } from '@/hooks/useAuth';
+import { useMessages } from '@/hooks/useMessages';
 import { Circle } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
 interface CircleSelectorProps {
