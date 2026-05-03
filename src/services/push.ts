@@ -56,6 +56,8 @@ export interface PushService {
   forceReregister(userId: string): Promise<void>;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 class NoopPushService implements PushService {
   isSupported() { return false; }
   async registerForUser() { /* no-op */ }
@@ -249,9 +251,16 @@ class NativePushService implements PushService {
 
   private async saveToken(userId: string, token: string) {
     try {
-      // Ensure session is present (RLS needs auth.uid())
-      const { data: sess } = await supabase.auth.getSession();
-      if (!sess.session) {
+      // Ensure session is present (RLS needs auth.uid()).
+      // На Android registration event може да дойде секунди преди auth state да се стабилизира.
+      let session = null;
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        const { data } = await supabase.auth.getSession();
+        session = data.session;
+        if (session) break;
+        await sleep(300);
+      }
+      if (!session) {
         const msg = 'no auth session — cannot upsert token';
         console.warn('[push]', msg);
         pushDiag.lastDbUpsertError = msg;
@@ -289,13 +298,36 @@ class NativePushService implements PushService {
   }
 }
 
-export const push: PushService =
-  isNative() && !PUSH_DISABLED ? new NativePushService() : new NoopPushService();
+const noopPushService = new NoopPushService();
+const nativePushService = new NativePushService();
+
+function getPushService(): PushService {
+  return isNative() && !PUSH_DISABLED ? nativePushService : noopPushService;
+}
+
+export const push: PushService = {
+  isSupported() {
+    return getPushService().isSupported();
+  },
+  registerForUser(userId: string) {
+    return getPushService().registerForUser(userId);
+  },
+  unregisterForUser(userId: string) {
+    return getPushService().unregisterForUser(userId);
+  },
+  forceReregister(userId: string) {
+    return getPushService().forceReregister(userId);
+  },
+};
 
 // ---------- Auth-state глобален hook ----------
 // Deferred: изпълнява се след първия render, за да не може ранна грешка
 // от push pipeline-а да блокира mount на React дървото.
+let authPushBridgeInitialized = false;
+
 function initAuthPushBridge() {
+  if (authPushBridgeInitialized) return;
+  authPushBridgeInitialized = true;
   let lastUserId: string | null = null;
 
   supabase.auth.getSession()
@@ -335,9 +367,11 @@ function initAuthPushBridge() {
   }
 }
 
-if (isNative() && !PUSH_DISABLED) {
-  if (typeof window !== 'undefined') {
-    // Изчакай първия paint
-    setTimeout(initAuthPushBridge, 1500);
-  }
+if (typeof window !== 'undefined') {
+  // Изчакай първия paint и провери native средата runtime, не при module init.
+  setTimeout(() => {
+    if (isNative() && !PUSH_DISABLED) {
+      initAuthPushBridge();
+    }
+  }, 1500);
 }

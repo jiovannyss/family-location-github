@@ -26,6 +26,7 @@ import { isNative } from '@/services/platform';
 import { toast } from 'sonner';
 import Header from '@/components/Header';
 import PushDiagnostics from '@/components/PushDiagnostics';
+import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -35,6 +36,8 @@ export default function Settings() {
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
+
+  useHardwareBackButton();
 
   const handleSaveProfile = () => {
     if (!displayName.trim()) {
@@ -105,14 +108,14 @@ export default function Settings() {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="container max-w-2xl px-4 py-6">
+      <main className="container max-w-2xl px-4 py-6 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] sm:pt-[calc(4rem+env(safe-area-inset-top)+1.5rem)]">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          <div className="flex items-center gap-4">
-            <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
+          <div className="flex items-center gap-2 sm:gap-4 sticky top-[calc(3.5rem+env(safe-area-inset-top)+0.25rem)] z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 py-1">
+            <Button variant="outline" size="icon" onClick={() => navigate('/')} aria-label="Назад към началото">
               <ArrowLeft className="w-5 h-5" />
             </Button>
             <h1 className="text-2xl font-bold text-foreground">Настройки</h1>
