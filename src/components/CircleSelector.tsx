@@ -26,7 +26,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useCircles, useJoinCircle } from '@/hooks/useCircles';
 import { useAuth } from '@/hooks/useAuth';
+import { useMessages } from '@/hooks/useMessages';
 import { Circle } from '@/lib/types';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 
 interface CircleSelectorProps {
@@ -38,6 +40,7 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
   const { circles, isLoading, createCircle, deleteCircle, renameCircle, isCreating, isRenaming } = useCircles();
   const joinCircle = useJoinCircle();
   const { user } = useAuth();
+  const { messages } = useMessages();
 
   const [newCircleName, setNewCircleName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -229,7 +232,13 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
               <p className="text-sm">Създайте нов или се присъединете към съществуващ</p>
             </motion.div>
           ) : (
-            circles?.map((circle) => (
+            circles?.map((circle) => {
+              const circleUnread = user
+                ? messages.filter(
+                    (m) => m.circle_id === circle.id && m.recipient_id === user.id && !m.read_at
+                  ).length
+                : 0;
+              return (
               <motion.div
                 key={circle.id}
                 layout
@@ -243,7 +252,7 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                       ? 'ring-2 ring-primary shadow-md' 
                       : 'hover:bg-secondary/50'
                   }`}
-                  onClick={() => onSelectCircle(circle)}
+                  onClick={() => onSelectCircle(selectedCircle?.id === circle.id ? null : circle)}
                 >
                   <CardContent className="p-3 sm:p-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -251,7 +260,14 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                         <Users className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-medium text-sm sm:text-base text-foreground truncate">{circle.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-sm sm:text-base text-foreground truncate">{circle.name}</h3>
+                          {circleUnread > 0 && (
+                            <Badge variant="destructive" className="h-5 min-w-[1.25rem] px-1.5 text-[10px] flex-shrink-0">
+                              {circleUnread > 99 ? '99+' : circleUnread}
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-xs sm:text-sm text-muted-foreground">
                           {circle.owner_id === user?.id ? 'Собственик' : 'Член'}
                         </p>
@@ -312,7 +328,8 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                   </CardContent>
                 </Card>
               </motion.div>
-            ))
+              );
+            })
           )}
         </AnimatePresence>
       </div>
