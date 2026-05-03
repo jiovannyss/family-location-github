@@ -24,16 +24,42 @@ import { notifications } from './notifications';
 const PUSH_ENABLED = import.meta.env.VITE_ENABLE_PUSH === 'true';
 const PUSH_DISABLED = !PUSH_ENABLED;
 
+// ---------- Live diagnostics (read by PushDiagnostics UI) ----------
+export interface PushDiagState {
+  registerCalled: boolean;
+  registerCallError: string | null;
+  registrationEventFired: boolean;
+  registrationError: string | null;
+  lastTokenLength: number | null;
+  lastTokenAt: string | null;
+  lastDbUpsertError: string | null;
+  lastDbUpsertAt: string | null;
+  listenersAttached: boolean;
+}
+export const pushDiag: PushDiagState = {
+  registerCalled: false,
+  registerCallError: null,
+  registrationEventFired: false,
+  registrationError: null,
+  lastTokenLength: null,
+  lastTokenAt: null,
+  lastDbUpsertError: null,
+  lastDbUpsertAt: null,
+  listenersAttached: false,
+};
+
 export interface PushService {
   isSupported(): boolean;
   registerForUser(userId: string): Promise<void>;
   unregisterForUser(userId: string): Promise<void>;
+  forceReregister(userId: string): Promise<void>;
 }
 
 class NoopPushService implements PushService {
   isSupported() { return false; }
   async registerForUser() { /* no-op */ }
   async unregisterForUser() { /* no-op */ }
+  async forceReregister() { /* no-op */ }
 }
 
 // Lazy-loaded native plugin тип
@@ -56,13 +82,8 @@ class NativePushService implements PushService {
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
-    console.log('[push] registerForUser called', { userId, PUSH_ENABLED, PUSH_DISABLED });
+    console.log('[push] registerForUser called', { userId, PUSH_ENABLED });
     if (PUSH_DISABLED) { console.info('[push] disabled — VITE_ENABLE_PUSH != true'); return; }
-    if (this.currentUserId === userId) { console.log('[push] already registered for this user'); return; }
-
-    if (this.currentUserId && this.currentUserId !== userId) {
-      await this.unregisterForUser(this.currentUserId);
-    }
     this.currentUserId = userId;
 
     const Push = await loadPushPlugin();
@@ -75,22 +96,60 @@ class NativePushService implements PushService {
         try {
           perm = await Push.requestPermissions();
           console.log('[push] requestPermissions →', perm);
-        } catch (e) { console.warn('[push] requestPermissions failed', e); return; }
+        } catch (e) {
+          console.warn('[push] requestPermissions failed', e);
+          pushDiag.registerCallError = 'requestPermissions failed: ' + (e as Error).message;
+          return;
+        }
       }
-      if (perm.receive !== 'granted') { console.warn('[push] permission not granted, abort'); return; }
+      if (perm.receive !== 'granted') {
+        console.warn('[push] permission not granted, abort');
+        pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
+        return;
+      }
 
+      // Attach listeners BEFORE register()
       await this.attachListeners(Push);
 
       if (this.currentToken) {
-        console.log('[push] reusing cached token');
+        console.log('[push] reusing cached token, re-saving');
         await this.saveToken(userId, this.currentToken);
       }
+
       try {
         await Push.register();
+        pushDiag.registerCalled = true;
+        pushDiag.registerCallError = null;
         console.log('[push] register() ok — waiting for registration event');
-      } catch (e) { console.warn('[push] register failed (likely missing FCM config)', e); }
+      } catch (e) {
+        const msg = (e as Error).message;
+        pushDiag.registerCallError = msg;
+        console.warn('[push] register failed', e);
+      }
     } catch (e) {
+      pushDiag.registerCallError = 'unexpected: ' + (e as Error).message;
       console.warn('[push] registerForUser unexpected error', e);
+    }
+  }
+
+  async forceReregister(userId: string): Promise<void> {
+    console.log('[push] forceReregister', userId);
+    this.currentUserId = userId;
+    this.currentToken = null;
+    pushDiag.registerCalled = false;
+    pushDiag.registrationEventFired = false;
+    pushDiag.registrationError = null;
+    pushDiag.lastDbUpsertError = null;
+    const Push = await loadPushPlugin();
+    if (!Push) return;
+    await this.attachListeners(Push);
+    try {
+      await Push.register();
+      pushDiag.registerCalled = true;
+      console.log('[push] forceReregister: register() ok');
+    } catch (e) {
+      pushDiag.registerCallError = (e as Error).message;
+      console.warn('[push] forceReregister failed', e);
     }
   }
 
@@ -111,16 +170,26 @@ class NativePushService implements PushService {
   private async attachListeners(Push: PushPlugin) {
     if (this.listenersAttached) return;
     this.listenersAttached = true;
+    pushDiag.listenersAttached = true;
     try {
       await Push.addListener('registration', async (token) => {
-        console.log('[push] registration event — token len:', token?.value?.length);
+        const len = token?.value?.length ?? 0;
+        console.log('[push] registration event — token len:', len);
+        pushDiag.registrationEventFired = true;
+        pushDiag.lastTokenLength = len;
+        pushDiag.lastTokenAt = new Date().toISOString();
         this.currentToken = token.value;
         const uid = this.currentUserId;
-        if (!uid) { console.warn('[push] got token but no currentUserId'); return; }
+        if (!uid) {
+          console.warn('[push] got token but no currentUserId — will retry on auth');
+          return;
+        }
         await this.saveToken(uid, token.value);
       });
       await Push.addListener('registrationError', (err) => {
+        const msg = JSON.stringify(err);
         console.warn('[push] registrationError', err);
+        pushDiag.registrationError = msg;
       });
       await Push.addListener('pushNotificationReceived', (notification) => {
         console.log('[push] notification received in foreground', notification);
@@ -131,30 +200,49 @@ class NativePushService implements PushService {
       });
     } catch (e) {
       console.warn('[push] attachListeners failed', e);
+      this.listenersAttached = false;
+      pushDiag.listenersAttached = false;
     }
   }
 
   private async saveToken(userId: string, token: string) {
     try {
+      // Ensure session is present (RLS needs auth.uid())
+      const { data: sess } = await supabase.auth.getSession();
+      if (!sess.session) {
+        const msg = 'no auth session — cannot upsert token';
+        console.warn('[push]', msg);
+        pushDiag.lastDbUpsertError = msg;
+        return;
+      }
       const deviceId = await getDeviceIdAsync();
       const platform = nativePlatform();
-      console.log('[push] saveToken upsert', { userId, deviceId, platform, tokenLen: token.length });
+      const platformValue = platform === 'web' ? 'android' : platform;
+      console.log('[push] saveToken upsert', { userId, deviceId, platform: platformValue, tokenLen: token.length });
       const { error } = await supabase
         .from('push_tokens')
         .upsert(
           {
             user_id: userId,
             device_id: deviceId,
-            platform: platform === 'web' ? 'android' : platform,
+            platform: platformValue,
             token,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id,device_id' }
         );
-      if (error) console.error('[push] saveToken DB error', error);
-      else console.log('[push] saveToken OK');
+      pushDiag.lastDbUpsertAt = new Date().toISOString();
+      if (error) {
+        console.error('[push] saveToken DB error', error);
+        pushDiag.lastDbUpsertError = `${error.code || ''} ${error.message}`;
+      } else {
+        pushDiag.lastDbUpsertError = null;
+        console.log('[push] saveToken OK');
+      }
     } catch (e) {
+      const msg = (e as Error).message;
       console.warn('[push] saveToken failed', e);
+      pushDiag.lastDbUpsertError = msg;
     }
   }
 }

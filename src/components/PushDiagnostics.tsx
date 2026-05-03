@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Bug, RefreshCw } from 'lucide-react';
+import { Bug, RefreshCw, Send } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { isNative, nativePlatform } from '@/services/platform';
 import { getDeviceIdAsync } from '@/services/deviceId';
+import { push, pushDiag } from '@/services/push';
+import { toast } from 'sonner';
 
 interface Diag {
   pushEnabled: boolean;
@@ -19,12 +21,23 @@ interface Diag {
   tokenUpdatedAt: string | null;
   tokensCount: number;
   notifPermission: string;
+  // live diagnostics
+  registerCalled: boolean;
+  registerCallError: string | null;
+  registrationEventFired: boolean;
+  registrationError: string | null;
+  lastTokenLength: number | null;
+  lastTokenAt: string | null;
+  lastDbUpsertError: string | null;
+  lastDbUpsertAt: string | null;
+  listenersAttached: boolean;
 }
 
 export default function PushDiagnostics() {
   const { user } = useAuth();
   const [d, setD] = useState<Diag | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reregistering, setReregistering] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -50,6 +63,7 @@ export default function PushDiagnostics() {
           .from('push_tokens')
           .select('token, updated_at, device_id')
           .eq('user_id', user.id);
+        if (error) console.warn('[diag] push_tokens select error', error);
         if (!error && data) {
           tokensCount = data.length;
           const own = data.find((t) => t.device_id === deviceId);
@@ -75,9 +89,32 @@ export default function PushDiagnostics() {
         tokenUpdatedAt,
         tokensCount,
         notifPermission,
+        registerCalled: pushDiag.registerCalled,
+        registerCallError: pushDiag.registerCallError,
+        registrationEventFired: pushDiag.registrationEventFired,
+        registrationError: pushDiag.registrationError,
+        lastTokenLength: pushDiag.lastTokenLength,
+        lastTokenAt: pushDiag.lastTokenAt,
+        lastDbUpsertError: pushDiag.lastDbUpsertError,
+        lastDbUpsertAt: pushDiag.lastDbUpsertAt,
+        listenersAttached: pushDiag.listenersAttached,
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const reregister = async () => {
+    if (!user) { toast.error('Няма влязъл потребител'); return; }
+    setReregistering(true);
+    try {
+      await push.forceReregister(user.id);
+      toast.success('Re-register пуснат — изчакай 2-3 сек и натисни Обнови');
+      setTimeout(() => { void load(); }, 2500);
+    } catch (e) {
+      toast.error('Грешка: ' + (e as Error).message);
+    } finally {
+      setReregistering(false);
     }
   };
 
@@ -92,7 +129,10 @@ export default function PushDiagnostics() {
         <CardDescription>Помага за дебъг на известията</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex justify-end mb-2">
+        <div className="flex justify-end gap-2 mb-2">
+          <Button size="sm" variant="outline" onClick={reregister} disabled={reregistering || !user}>
+            <Send className={`w-4 h-4 ${reregistering ? 'animate-pulse' : ''}`} /> Re-register
+          </Button>
           <Button size="sm" variant="outline" onClick={load} disabled={loading}>
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Обнови
           </Button>
