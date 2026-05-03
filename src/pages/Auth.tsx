@@ -8,6 +8,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
 import { storage } from '@/services/storage';
+import { toast } from 'sonner';
+import { z } from 'zod';
 
 const LAST_EMAIL_KEY = 'last_login_email_v1';
 import { toast } from 'sonner';
