@@ -68,21 +68,32 @@ type PushPlugin = typeof import('@capacitor/push-notifications').PushNotificatio
 let pushPluginPromise: Promise<PushPlugin | null> | null = null;
 async function loadPushPlugin(): Promise<PushPlugin | null> {
   if (!pushPluginPromise) {
-    pushPluginPromise = import('@capacitor/push-notifications')
-      .then((m) => {
+    pushPluginPromise = (async () => {
+      try {
+        const m = await import('@capacitor/push-notifications');
         if (!m?.PushNotifications) {
           pushDiag.pluginLoadError = 'PushNotifications export missing';
+          console.warn('[push] PushNotifications export missing on module', Object.keys(m || {}));
           return null;
+        }
+        // Sanity: проверка че plugin-ът е реално регистриран в native bridge
+        try {
+          await m.PushNotifications.checkPermissions();
+        } catch (e) {
+          const msg = (e as Error).message || String(e);
+          pushDiag.pluginLoadError = 'checkPermissions failed: ' + msg;
+          console.warn('[push] checkPermissions probe failed', e);
+          // Връщаме plugin-а въпреки това — register() може да даде по-точна грешка
         }
         pushDiag.pluginLoadError = null;
         return m.PushNotifications;
-      })
-      .catch((e) => {
+      } catch (e) {
         const msg = (e as Error).message || String(e);
         console.warn('[push] plugin import failed', e);
         pushDiag.pluginLoadError = msg;
         return null;
-      });
+      }
+    })();
   }
   return pushPluginPromise;
 }
