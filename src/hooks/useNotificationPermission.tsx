@@ -26,15 +26,25 @@ export function useNotificationPermission() {
   }, []);
 
   const request = useCallback(async (): Promise<PermState> => {
-    const result = await notifications.requestPermission();
-    setPermission(result as PermState);
+    let result: PermState = 'default';
+    try {
+      result = (await notifications.requestPermission()) as PermState;
+    } catch (e) {
+      console.error('[notifications] requestPermission failed', e);
+      toast.error('Грешка при заявка за известия');
+    }
+    setPermission(result);
     await markAsked();
     if (result === 'granted') {
       toast.success('Известията са включени');
     } else if (result === 'denied') {
       toast.info('Известията са изключени. Може да ги разрешите от настройките на браузъра.');
+    } else if (result === 'unsupported') {
+      toast.info('Този браузър не поддържа известия (или сме в iframe).');
+    } else {
+      toast.info('Заявката е затворена без избор.');
     }
-    return result as PermState;
+    return result;
   }, [markAsked]);
 
   const dismiss = useCallback(async () => {

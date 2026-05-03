@@ -149,7 +149,9 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="container px-3 sm:px-4 py-4 sm:py-6 max-w-7xl">
+      <main
+        className="container px-3 sm:px-4 py-4 sm:py-6 max-w-7xl pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] sm:pt-[calc(4rem+env(safe-area-inset-top)+1.5rem)]"
+      >
         {/* Mobile tabs */}
         <div className="lg:hidden mb-4 flex gap-2 p-1 bg-muted rounded-xl">
           <Button
