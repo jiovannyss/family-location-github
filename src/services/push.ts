@@ -16,7 +16,13 @@ import { isNative, nativePlatform } from './platform';
 import { getDeviceIdAsync } from './deviceId';
 import { notifications } from './notifications';
 
-const PUSH_DISABLED = import.meta.env.VITE_DISABLE_PUSH === 'true';
+// Push е OPT-IN: на Android `PushNotifications.register()` хвърля native
+// Java exception, ако липсва `google-services.json` (FCM config). Този crash
+// става в Java thread и НЕ може да се хване от JS try/catch → процесът умира.
+// Затова push се активира само когато явно подадеш VITE_ENABLE_PUSH=true
+// (след като добавиш google-services.json в android/app/).
+const PUSH_ENABLED = import.meta.env.VITE_ENABLE_PUSH === 'true';
+const PUSH_DISABLED = !PUSH_ENABLED;
 
 export interface PushService {
   isSupported(): boolean;
