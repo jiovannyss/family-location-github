@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useProfile } from '@/hooks/useProfile';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import MessagesInbox from './MessagesInbox';
+
 
 export default function Header() {
   const { user, signOut } = useAuth();
@@ -54,7 +54,6 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <MessagesInbox />
           <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-10 w-10 rounded-full p-0">

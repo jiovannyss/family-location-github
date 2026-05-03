@@ -10,7 +10,6 @@ import {
   Loader2,
   Eye,
   EyeOff,
-  MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -30,7 +29,8 @@ import { Circle, MemberWithLocation } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { bg } from 'date-fns/locale';
 import { toast } from 'sonner';
-import SendMessageDialog from './SendMessageDialog';
+import ChatDialog from './ChatDialog';
+import { useMessages } from '@/hooks/useMessages';
 
 interface CircleMembersProps {
   circle: Circle;
@@ -41,7 +41,8 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
   const { members, isLoading, currentMember } = useCircleMembers(circle.id);
   const { invites, createInvite, isCreating } = useInvites(circle.id);
   const { user } = useAuth();
-  
+  const { messages } = useMessages();
+
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
 
@@ -252,18 +253,15 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
 
                     <div className="flex items-center gap-2 flex-shrink-0">
                       {member.user_id !== user?.id && (
-                        <SendMessageDialog
+                        <ChatDialog
                           recipient={member}
-                          trigger={
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 gap-1.5 px-2"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <MessageCircle className="w-3.5 h-3.5" />
-                              <span className="text-xs">Съобщение</span>
-                            </Button>
+                          unreadCount={
+                            messages.filter(
+                              (m) =>
+                                m.sender_id === member.user_id &&
+                                m.recipient_id === user?.id &&
+                                !m.read_at,
+                            ).length
                           }
                         />
                       )}
