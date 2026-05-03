@@ -40,6 +40,7 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
   const { circles, isLoading, createCircle, deleteCircle, renameCircle, isCreating, isRenaming } = useCircles();
   const joinCircle = useJoinCircle();
   const { user } = useAuth();
+  const { messages } = useMessages();
 
   const [newCircleName, setNewCircleName] = useState('');
   const [inviteCode, setInviteCode] = useState('');
