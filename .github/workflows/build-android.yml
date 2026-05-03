@@ -24,6 +24,14 @@ on:
         options:
           - debug
           - release-aab
+      enable_push:
+        description: 'Активирай Firebase Push (изисква ANDROID_GOOGLE_SERVICES_JSON_BASE64)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   android:
