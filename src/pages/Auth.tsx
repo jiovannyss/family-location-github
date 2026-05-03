@@ -193,6 +193,34 @@ export default function Auth() {
                 )}
               </div>
 
+              {!isLogin && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2"
+                >
+                  <Label htmlFor="confirmPassword">Повторете паролата</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  {errors.confirmPassword && (
+                    <p className="text-sm text-destructive">{errors.confirmPassword}</p>
+                  )}
+                  {!errors.confirmPassword && confirmPassword.length > 0 && password !== confirmPassword && (
+                    <p className="text-sm text-destructive">Паролите не съвпадат</p>
+                  )}
+                </motion.div>
+              )}
+
               <Button
                 type="submit"
                 variant="hero"
