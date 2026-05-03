@@ -39,8 +39,16 @@ export default function Auth() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, user, loading } = useAuth();
   const navigate = useNavigate();
+
+  // Ако вече сме логнати → отиди директно на главната
+  // (предотвратява "back" от главната да връща към login екрана).
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/', { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   // Prefill последно използвания имейл (за да не се пише всеки път).
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function Auth() {
         }
         await storage.set(LAST_EMAIL_KEY, email);
         toast.success('Успешен вход!');
-        navigate('/');
+        navigate('/', { replace: true });
       } else {
         const { error } = await signUp(email, password, displayName);
         if (error) {
@@ -103,7 +111,7 @@ export default function Auth() {
         }
         await storage.set(LAST_EMAIL_KEY, email);
         toast.success('Успешна регистрация! Вече сте влезли.');
-        navigate('/');
+        navigate('/', { replace: true });
       }
     } finally {
       setIsLoading(false);

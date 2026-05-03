@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { useAuth } from '@/hooks/useAuth';
 import { useCircleMembers, useCircles } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
+import { useAppBadgeSync } from '@/hooks/useAppBadge';
+import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
 import { Circle, MemberWithLocation } from '@/lib/types';
 import Header from '@/components/Header';
 import CircleSelector from '@/components/CircleSelector';
@@ -34,6 +36,11 @@ const Index = () => {
   // Enable realtime updates for circle members
   const userIds = members?.filter(m => m.status === 'accepted').map(m => m.user_id) || [];
   useRealtimeLocations(userIds);
+
+  // Sync на броя непрочетени с иконата на приложението (червено балонче)
+  useAppBadgeSync();
+  // Android hardware back → минимизирай вместо да пращаш в /auth
+  useHardwareBackButton();
 
   // Always derive the selected member from the latest members list
   const selectedMember = useMemo<MemberWithLocation | null>(() => {
