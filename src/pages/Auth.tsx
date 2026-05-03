@@ -29,6 +29,7 @@ export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -39,9 +40,9 @@ export default function Auth() {
   const validateForm = () => {
     try {
       if (isLogin) {
-        authSchema.pick({ email: true, password: true }).parse({ email, password });
+        loginSchema.parse({ email, password });
       } else {
-        authSchema.parse({ email, password, displayName });
+        signupSchema.parse({ email, password, confirmPassword, displayName });
       }
       setErrors({});
       return true;
