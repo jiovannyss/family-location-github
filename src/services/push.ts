@@ -113,15 +113,17 @@ class NativePushService implements PushService {
     this.listenersAttached = true;
     try {
       await Push.addListener('registration', async (token) => {
+        console.log('[push] registration event — token len:', token?.value?.length);
         this.currentToken = token.value;
         const uid = this.currentUserId;
-        if (!uid) return;
+        if (!uid) { console.warn('[push] got token but no currentUserId'); return; }
         await this.saveToken(uid, token.value);
       });
       await Push.addListener('registrationError', (err) => {
         console.warn('[push] registrationError', err);
       });
       await Push.addListener('pushNotificationReceived', (notification) => {
+        console.log('[push] notification received in foreground', notification);
         void notifications.notify({
           title: notification.title || 'Ново съобщение',
           body: notification.body,
@@ -136,7 +138,8 @@ class NativePushService implements PushService {
     try {
       const deviceId = await getDeviceIdAsync();
       const platform = nativePlatform();
-      await supabase
+      console.log('[push] saveToken upsert', { userId, deviceId, platform, tokenLen: token.length });
+      const { error } = await supabase
         .from('push_tokens')
         .upsert(
           {
@@ -148,6 +151,8 @@ class NativePushService implements PushService {
           },
           { onConflict: 'user_id,device_id' }
         );
+      if (error) console.error('[push] saveToken DB error', error);
+      else console.log('[push] saveToken OK');
     } catch (e) {
       console.warn('[push] saveToken failed', e);
     }
