@@ -24,10 +24,35 @@ import { notifications } from './notifications';
 const PUSH_ENABLED = import.meta.env.VITE_ENABLE_PUSH === 'true';
 const PUSH_DISABLED = !PUSH_ENABLED;
 
+// ---------- Live diagnostics (read by PushDiagnostics UI) ----------
+export interface PushDiagState {
+  registerCalled: boolean;
+  registerCallError: string | null;
+  registrationEventFired: boolean;
+  registrationError: string | null;
+  lastTokenLength: number | null;
+  lastTokenAt: string | null;
+  lastDbUpsertError: string | null;
+  lastDbUpsertAt: string | null;
+  listenersAttached: boolean;
+}
+export const pushDiag: PushDiagState = {
+  registerCalled: false,
+  registerCallError: null,
+  registrationEventFired: false,
+  registrationError: null,
+  lastTokenLength: null,
+  lastTokenAt: null,
+  lastDbUpsertError: null,
+  lastDbUpsertAt: null,
+  listenersAttached: false,
+};
+
 export interface PushService {
   isSupported(): boolean;
   registerForUser(userId: string): Promise<void>;
   unregisterForUser(userId: string): Promise<void>;
+  forceReregister(userId: string): Promise<void>;
 }
 
 class NoopPushService implements PushService {
