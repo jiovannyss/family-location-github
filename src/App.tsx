@@ -10,8 +10,6 @@ import Settings from "./pages/Settings";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import NotFound from "./pages/NotFound";
-// Import за глобален auth-state push lifecycle (само side-effect)
-import "@/services/push";
 
 const queryClient = new QueryClient();
 
