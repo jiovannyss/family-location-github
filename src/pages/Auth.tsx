@@ -156,6 +156,7 @@ export default function Auth() {
                       id="displayName"
                       type="text"
                       placeholder="Иван Иванов"
+                      autoComplete="name"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
                       className="pl-10"
