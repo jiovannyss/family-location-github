@@ -98,7 +98,7 @@ export default function Auth() {
         }
         await storage.set(LAST_EMAIL_KEY, email);
         toast.success('Успешен вход!');
-        navigate('/');
+        navigate('/', { replace: true });
       } else {
         const { error } = await signUp(email, password, displayName);
         if (error) {
@@ -111,7 +111,7 @@ export default function Auth() {
         }
         await storage.set(LAST_EMAIL_KEY, email);
         toast.success('Успешна регистрация! Вече сте влезли.');
-        navigate('/');
+        navigate('/', { replace: true });
       }
     } finally {
       setIsLoading(false);
