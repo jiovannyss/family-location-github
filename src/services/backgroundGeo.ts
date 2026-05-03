@@ -37,10 +37,15 @@ interface BgGeoPlugin {
   openSettings(): Promise<void>;
 }
 
-const BackgroundGeolocation =
-  isNative()
-    ? registerPlugin<BgGeoPlugin>('BackgroundGeolocation')
-    : null;
+let BackgroundGeolocation: BgGeoPlugin | null = null;
+if (isNative()) {
+  try {
+    BackgroundGeolocation = registerPlugin<BgGeoPlugin>('BackgroundGeolocation');
+  } catch (e) {
+    console.warn('[backgroundGeo] plugin register failed', e);
+    BackgroundGeolocation = null;
+  }
+}
 
 export interface BackgroundGeoHandle {
   stop: () => Promise<void>;

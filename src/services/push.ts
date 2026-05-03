@@ -3,26 +3,24 @@
  *
  * Web: no-op (използваме toast + Web Notifications от `notifications.ts`).
  *
- * Native lifecycle:
- *  - Слуша supabase auth state глобално (един път, при import).
- *  - При SIGNED_IN → register + upsert на token за текущия user.
- *  - При SIGNED_OUT / USER_UPDATED със смяна на user → изтрива токена за
- *    предишния user, преди да регистрира новия. Това гарантира, че push-ове
- *    не отиват към грешен акаунт след logout/login в същата сесия.
- *  - Listener-ите на `registration` и `pushNotificationReceived` се връзват
- *    еднократно, но винаги пишат за АКТУАЛНИЯ user (по-долу `currentUserId`).
+ * Защитна стратегия за Android debug билдове БЕЗ google-services.json:
+ *  - Динамичен import на @capacitor/push-notifications, за да не може липсваща
+ *    Firebase конфигурация да crash-не bundle-а при стартиране.
+ *  - Всички native повиквания са обвити в try/catch + логване.
+ *  - VITE_DISABLE_PUSH=true изключва push изцяло (диагностични билдове).
+ *  - Auth listener-ът се закача СЛЕД като DOM-ът е mounted (deferred), за да
+ *    не се изпълнява през първия render и да не блокира startup.
  */
-import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/integrations/supabase/client';
 import { isNative, nativePlatform } from './platform';
 import { getDeviceIdAsync } from './deviceId';
 import { notifications } from './notifications';
 
+const PUSH_DISABLED = import.meta.env.VITE_DISABLE_PUSH === 'true';
+
 export interface PushService {
   isSupported(): boolean;
-  /** Идемпотентен — безопасно е да се извика няколко пъти за същия user. */
   registerForUser(userId: string): Promise<void>;
-  /** Изтрива token-а за този user/устройство от backend-а. */
   unregisterForUser(userId: string): Promise<void>;
 }
 
@@ -32,41 +30,54 @@ class NoopPushService implements PushService {
   async unregisterForUser() { /* no-op */ }
 }
 
+// Lazy-loaded native plugin тип
+type PushPlugin = typeof import('@capacitor/push-notifications').PushNotifications;
+let pushPluginPromise: Promise<PushPlugin | null> | null = null;
+async function loadPushPlugin(): Promise<PushPlugin | null> {
+  if (!pushPluginPromise) {
+    pushPluginPromise = import('@capacitor/push-notifications')
+      .then((m) => m.PushNotifications)
+      .catch((e) => { console.warn('[push] plugin import failed', e); return null; });
+  }
+  return pushPluginPromise;
+}
+
 class NativePushService implements PushService {
   private listenersAttached = false;
   private currentUserId: string | null = null;
-  /** Последно регистрираният token (за да го изтрием при logout). */
   private currentToken: string | null = null;
 
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
-    // Ако вече сме регистрирани за същия user — нищо за правене
+    if (PUSH_DISABLED) { console.info('[push] disabled via VITE_DISABLE_PUSH'); return; }
     if (this.currentUserId === userId) return;
 
-    // Смяна на user → изтрий стария токен от backend-а
     if (this.currentUserId && this.currentUserId !== userId) {
       await this.unregisterForUser(this.currentUserId);
     }
-
     this.currentUserId = userId;
 
+    const Push = await loadPushPlugin();
+    if (!Push) return;
+
     try {
-      let perm = await PushNotifications.checkPermissions();
+      let perm = await Push.checkPermissions();
       if (perm.receive !== 'granted') {
-        perm = await PushNotifications.requestPermissions();
+        try { perm = await Push.requestPermissions(); }
+        catch (e) { console.warn('[push] requestPermissions failed', e); return; }
       }
       if (perm.receive !== 'granted') return;
 
-      this.attachListeners();
+      await this.attachListeners(Push);
 
-      // Ако вече имаме token от предишна регистрация в същата сесия — upsert веднага
       if (this.currentToken) {
         await this.saveToken(userId, this.currentToken);
       }
-      await PushNotifications.register();
+      try { await Push.register(); }
+      catch (e) { console.warn('[push] register failed (likely missing FCM config)', e); }
     } catch (e) {
-      console.error('Push register failed:', e);
+      console.warn('[push] registerForUser unexpected error', e);
     }
   }
 
@@ -79,34 +90,33 @@ class NativePushService implements PushService {
         .eq('user_id', userId)
         .eq('device_id', deviceId);
     } catch (e) {
-      console.error('Push unregister failed:', e);
+      console.warn('[push] unregister failed', e);
     }
-    if (this.currentUserId === userId) {
-      this.currentUserId = null;
-    }
+    if (this.currentUserId === userId) this.currentUserId = null;
   }
 
-  private attachListeners() {
+  private async attachListeners(Push: PushPlugin) {
     if (this.listenersAttached) return;
     this.listenersAttached = true;
-
-    PushNotifications.addListener('registration', async (token) => {
-      this.currentToken = token.value;
-      const uid = this.currentUserId;
-      if (!uid) return; // logout е настъпил между request-а и callback-а
-      await this.saveToken(uid, token.value);
-    });
-
-    PushNotifications.addListener('registrationError', (err) => {
-      console.error('Push registration error:', err);
-    });
-
-    PushNotifications.addListener('pushNotificationReceived', (notification) => {
-      void notifications.notify({
-        title: notification.title || 'Ново съобщение',
-        body: notification.body,
+    try {
+      await Push.addListener('registration', async (token) => {
+        this.currentToken = token.value;
+        const uid = this.currentUserId;
+        if (!uid) return;
+        await this.saveToken(uid, token.value);
       });
-    });
+      await Push.addListener('registrationError', (err) => {
+        console.warn('[push] registrationError', err);
+      });
+      await Push.addListener('pushNotificationReceived', (notification) => {
+        void notifications.notify({
+          title: notification.title || 'Ново съобщение',
+          body: notification.body,
+        });
+      });
+    } catch (e) {
+      console.warn('[push] attachListeners failed', e);
+    }
   }
 
   private async saveToken(userId: string, token: string) {
@@ -126,43 +136,60 @@ class NativePushService implements PushService {
           { onConflict: 'user_id,device_id' }
         );
     } catch (e) {
-      console.error('Push token save failed:', e);
+      console.warn('[push] saveToken failed', e);
     }
   }
 }
 
-export const push: PushService = isNative() ? new NativePushService() : new NoopPushService();
+export const push: PushService =
+  isNative() && !PUSH_DISABLED ? new NativePushService() : new NoopPushService();
 
 // ---------- Auth-state глобален hook ----------
-// Връзва push lifecycle към login/logout автоматично, така че никой компонент
-// не трябва ръчно да вика register/unregister.
-if (isNative()) {
+// Deferred: изпълнява се след първия render, за да не може ранна грешка
+// от push pipeline-а да блокира mount на React дървото.
+function initAuthPushBridge() {
   let lastUserId: string | null = null;
 
-  // Init от текущата сесия
-  supabase.auth.getSession().then(({ data }) => {
-    const uid = data.session?.user?.id ?? null;
-    if (uid) {
-      lastUserId = uid;
-      void push.registerForUser(uid);
-    }
-  });
-
-  supabase.auth.onAuthStateChange((event, session) => {
-    const uid = session?.user?.id ?? null;
-    if (event === 'SIGNED_OUT' || !uid) {
-      if (lastUserId) {
-        void push.unregisterForUser(lastUserId);
-        lastUserId = null;
+  supabase.auth.getSession()
+    .then(({ data }) => {
+      const uid = data.session?.user?.id ?? null;
+      if (uid) {
+        lastUserId = uid;
+        void push.registerForUser(uid);
       }
-      return;
-    }
-    if (uid !== lastUserId) {
-      // Смяна на акаунт (или първоначален login)
-      const prev = lastUserId;
-      lastUserId = uid;
-      if (prev) void push.unregisterForUser(prev);
-      void push.registerForUser(uid);
-    }
-  });
+    })
+    .catch((e) => console.warn('[push] getSession failed', e));
+
+  try {
+    supabase.auth.onAuthStateChange((event, session) => {
+      try {
+        const uid = session?.user?.id ?? null;
+        if (event === 'SIGNED_OUT' || !uid) {
+          if (lastUserId) {
+            void push.unregisterForUser(lastUserId);
+            lastUserId = null;
+          }
+          return;
+        }
+        if (uid !== lastUserId) {
+          const prev = lastUserId;
+          lastUserId = uid;
+          if (prev) void push.unregisterForUser(prev);
+          // Малко забавяне → изчакваме session/profile да се стабилизират
+          setTimeout(() => { void push.registerForUser(uid); }, 800);
+        }
+      } catch (e) {
+        console.warn('[push] auth listener error', e);
+      }
+    });
+  } catch (e) {
+    console.warn('[push] onAuthStateChange subscribe failed', e);
+  }
+}
+
+if (isNative() && !PUSH_DISABLED) {
+  if (typeof window !== 'undefined') {
+    // Изчакай първия paint
+    setTimeout(initAuthPushBridge, 1500);
+  }
 }
