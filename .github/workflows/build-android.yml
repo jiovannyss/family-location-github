@@ -100,6 +100,16 @@ jobs:
           chmod +x scripts/patch-android-manifest.sh
           ./scripts/patch-android-manifest.sh
 
+      - name: Set app version (versionCode/versionName)
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          GRADLE="android/app/build.gradle"
+          sed -i "s/versionCode [0-9]\+/versionCode ${RUN_NUMBER}/" "$GRADLE"
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.0.${RUN_NUMBER}\"/" "$GRADLE"
+          echo "📱 versionCode=${RUN_NUMBER}, versionName=1.0.${RUN_NUMBER}"
+          grep -E "versionCode|versionName" "$GRADLE"
+
       # ----- DEBUG -----
       - name: Gradle assembleDebug
         if: ${{ inputs.build_type == 'debug' }}
@@ -108,18 +118,20 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Rename debug APK to family-location.apk
+      - name: Rename debug APK
         if: ${{ inputs.build_type == 'debug' }}
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           src=$(ls android/app/build/outputs/apk/debug/*.apk | head -n1)
-          cp "$src" "android/app/build/outputs/apk/debug/family-location.apk"
+          cp "$src" "android/app/build/outputs/apk/debug/family-location-1.0.${RUN_NUMBER}.apk"
 
       - name: Upload debug APK
         if: ${{ inputs.build_type == 'debug' }}
         uses: actions/upload-artifact@v4
         with:
-          name: family-location-android-debug
-          path: android/app/build/outputs/apk/debug/family-location.apk
+          name: family-location-android-debug-1.0.${{ github.run_number }}
+          path: android/app/build/outputs/apk/debug/family-location-1.0.${{ github.run_number }}.apk
           if-no-files-found: error
 
       # ----- RELEASE AAB -----
