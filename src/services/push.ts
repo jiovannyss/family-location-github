@@ -56,8 +56,9 @@ class NativePushService implements PushService {
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
-    if (PUSH_DISABLED) { console.info('[push] disabled via VITE_DISABLE_PUSH'); return; }
-    if (this.currentUserId === userId) return;
+    console.log('[push] registerForUser called', { userId, PUSH_ENABLED, PUSH_DISABLED });
+    if (PUSH_DISABLED) { console.info('[push] disabled — VITE_ENABLE_PUSH != true'); return; }
+    if (this.currentUserId === userId) { console.log('[push] already registered for this user'); return; }
 
     if (this.currentUserId && this.currentUserId !== userId) {
       await this.unregisterForUser(this.currentUserId);
@@ -65,23 +66,29 @@ class NativePushService implements PushService {
     this.currentUserId = userId;
 
     const Push = await loadPushPlugin();
-    if (!Push) return;
+    if (!Push) { console.warn('[push] plugin not loaded'); return; }
 
     try {
       let perm = await Push.checkPermissions();
+      console.log('[push] checkPermissions →', perm);
       if (perm.receive !== 'granted') {
-        try { perm = await Push.requestPermissions(); }
-        catch (e) { console.warn('[push] requestPermissions failed', e); return; }
+        try {
+          perm = await Push.requestPermissions();
+          console.log('[push] requestPermissions →', perm);
+        } catch (e) { console.warn('[push] requestPermissions failed', e); return; }
       }
-      if (perm.receive !== 'granted') return;
+      if (perm.receive !== 'granted') { console.warn('[push] permission not granted, abort'); return; }
 
       await this.attachListeners(Push);
 
       if (this.currentToken) {
+        console.log('[push] reusing cached token');
         await this.saveToken(userId, this.currentToken);
       }
-      try { await Push.register(); }
-      catch (e) { console.warn('[push] register failed (likely missing FCM config)', e); }
+      try {
+        await Push.register();
+        console.log('[push] register() ok — waiting for registration event');
+      } catch (e) { console.warn('[push] register failed (likely missing FCM config)', e); }
     } catch (e) {
       console.warn('[push] registerForUser unexpected error', e);
     }
