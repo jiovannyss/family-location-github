@@ -108,7 +108,7 @@ export default function Settings() {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main className="container max-w-2xl px-4 py-6">
+      <main className="container max-w-2xl px-4 py-6 pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] sm:pt-[calc(4rem+env(safe-area-inset-top)+1.5rem)]">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
