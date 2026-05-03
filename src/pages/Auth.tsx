@@ -7,11 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
-import { storage } from '@/services/storage';
 import { toast } from 'sonner';
 import { z } from 'zod';
-
-const LAST_EMAIL_KEY = 'last_login_email_v1';
 
 const loginSchema = z.object({
   email: z.string().email('Невалиден имейл адрес'),
@@ -49,11 +46,6 @@ export default function Auth() {
       navigate('/', { replace: true });
     }
   }, [user, loading, navigate]);
-
-  // Prefill последно използвания имейл (за да не се пише всеки път).
-  useEffect(() => {
-    storage.get(LAST_EMAIL_KEY).then((v) => { if (v) setEmail(v); });
-  }, []);
 
   const validateForm = () => {
     try {
@@ -96,7 +88,6 @@ export default function Auth() {
           }
           return;
         }
-        await storage.set(LAST_EMAIL_KEY, email);
         toast.success('Успешен вход!');
         navigate('/', { replace: true });
       } else {
@@ -109,7 +100,6 @@ export default function Auth() {
           }
           return;
         }
-        await storage.set(LAST_EMAIL_KEY, email);
         toast.success('Успешна регистрация! Вече сте влезли.');
         navigate('/', { replace: true });
       }
@@ -165,7 +155,7 @@ export default function Auth() {
                     <Input
                       id="displayName"
                       type="text"
-                      placeholder="Иван Иванов"
+                      placeholder="Вашето име"
                       autoComplete="name"
                       value={displayName}
                       onChange={(e) => setDisplayName(e.target.value)}
@@ -189,7 +179,7 @@ export default function Auth() {
                     autoCapitalize="none"
                     autoCorrect="off"
                     autoComplete="email"
-                    placeholder="ivan@example.com"
+                    placeholder="Въведете имейл"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10"
