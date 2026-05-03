@@ -225,16 +225,22 @@ export function useJoinCircle() {
     mutationFn: async (code: string) => {
       if (!user) throw new Error('Not authenticated');
       
-      // Find invite
-      const { data: invite, error: inviteError } = await supabase
-        .from('invites')
-        .select('*, circle:circles(*)')
-        .eq('code', code.toUpperCase())
-        .gt('expires_at', new Date().toISOString())
-        .maybeSingle();
+      // Find invite via SECURITY DEFINER function (RLS hides invites from non-creators)
+      const { data: inviteRows, error: inviteError } = await supabase
+        .rpc('find_invite_by_code', { _code: code.toUpperCase() });
 
       if (inviteError) throw inviteError;
-      if (!invite) throw new Error('Невалиден или изтекъл код за покана');
+      const inviteRow = Array.isArray(inviteRows) ? inviteRows[0] : inviteRows;
+      if (!inviteRow) throw new Error('Невалиден или изтекъл код за покана');
+
+      // Fetch circle info (visible after we add membership; for now use minimal data)
+      const { data: circleData } = await supabase
+        .from('circles')
+        .select('*')
+        .eq('id', inviteRow.circle_id)
+        .maybeSingle();
+
+      const invite = { circle_id: inviteRow.circle_id, circle: circleData ?? { id: inviteRow.circle_id, name: 'Кръг' } };
 
       // Check if already a member
       const { data: existingMember } = await supabase
