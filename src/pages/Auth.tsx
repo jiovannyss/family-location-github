@@ -12,8 +12,6 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 const LAST_EMAIL_KEY = 'last_login_email_v1';
-import { toast } from 'sonner';
-import { z } from 'zod';
 
 const loginSchema = z.object({
   email: z.string().email('Невалиден имейл адрес'),
