@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { MapPin, Mail, Lock, User, ArrowRight, Loader2 } from 'lucide-react';
@@ -7,6 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/hooks/useAuth';
+import { storage } from '@/services/storage';
+
+const LAST_EMAIL_KEY = 'last_login_email_v1';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
