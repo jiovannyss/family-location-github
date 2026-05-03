@@ -25,6 +25,7 @@ import { Preferences } from '@capacitor/preferences';
 import { isNative } from '@/services/platform';
 import { toast } from 'sonner';
 import Header from '@/components/Header';
+import PushDiagnostics from '@/components/PushDiagnostics';
 
 export default function Settings() {
   const navigate = useNavigate();
