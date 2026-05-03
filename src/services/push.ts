@@ -380,11 +380,19 @@ function initAuthPushBridge() {
   }
 }
 
+export function ensurePushLifecycleStarted() {
+  if (typeof window === 'undefined') return;
+  if (!isNative() || PUSH_DISABLED) return;
+  initAuthPushBridge();
+}
+
 if (typeof window !== 'undefined') {
-  // Инициализирай веднага след mount; native check е runtime.
-  queueMicrotask(() => {
-    if (isNative() && !PUSH_DISABLED) {
-      initAuthPushBridge();
-    }
+  // Backup auto-start за случаите, в които модулът е зареден преди React mount.
+  const scheduleStart = typeof queueMicrotask === 'function'
+    ? queueMicrotask
+    : (callback: () => void) => window.setTimeout(callback, 0);
+
+  scheduleStart(() => {
+    ensurePushLifecycleStarted();
   });
 }
