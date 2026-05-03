@@ -40,6 +40,11 @@ export default function Auth() {
   const { signIn, signUp } = useAuth();
   const navigate = useNavigate();
 
+  // Prefill последно използвания имейл (за да не се пише всеки път).
+  useEffect(() => {
+    storage.get(LAST_EMAIL_KEY).then((v) => { if (v) setEmail(v); });
+  }, []);
+
   const validateForm = () => {
     try {
       if (isLogin) {
