@@ -31,6 +31,7 @@ interface Diag {
   lastDbUpsertError: string | null;
   lastDbUpsertAt: string | null;
   listenersAttached: boolean;
+  lastPermissionState: string | null;
   pluginLoadError: string | null;
 }
 
@@ -99,6 +100,7 @@ export default function PushDiagnostics() {
         lastDbUpsertError: pushDiag.lastDbUpsertError,
         lastDbUpsertAt: pushDiag.lastDbUpsertAt,
         listenersAttached: pushDiag.listenersAttached,
+        lastPermissionState: pushDiag.lastPermissionState,
         pluginLoadError: pushDiag.pluginLoadError,
       });
     } finally {

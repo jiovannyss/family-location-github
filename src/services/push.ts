@@ -35,6 +35,7 @@ export interface PushDiagState {
   lastDbUpsertError: string | null;
   lastDbUpsertAt: string | null;
   listenersAttached: boolean;
+  lastPermissionState: string | null;
 }
 export const pushDiag: PushDiagState & { pluginLoadError: string | null } = {
   registerCalled: false,
@@ -46,6 +47,7 @@ export const pushDiag: PushDiagState & { pluginLoadError: string | null } = {
   lastDbUpsertError: null,
   lastDbUpsertAt: null,
   listenersAttached: false,
+  lastPermissionState: null,
   pluginLoadError: null,
 };
 
@@ -117,10 +119,12 @@ class NativePushService implements PushService {
 
     try {
       let perm = await Push.checkPermissions();
+      pushDiag.lastPermissionState = perm.receive;
       console.log('[push] checkPermissions →', perm);
       if (perm.receive !== 'granted') {
         try {
           perm = await Push.requestPermissions();
+          pushDiag.lastPermissionState = perm.receive;
           console.log('[push] requestPermissions →', perm);
         } catch (e) {
           console.warn('[push] requestPermissions failed', e);
@@ -175,8 +179,16 @@ class NativePushService implements PushService {
     // Make sure permission is granted before register()
     try {
       let perm = await Push.checkPermissions();
+      pushDiag.lastPermissionState = perm.receive;
       if (perm.receive !== 'granted') {
-        perm = await Push.requestPermissions();
+        try {
+          perm = await Push.requestPermissions();
+          pushDiag.lastPermissionState = perm.receive;
+        } catch (e) {
+          const msg = (e as Error).message;
+          pushDiag.registerCallError = 'requestPermissions failed: ' + msg;
+          return;
+        }
       }
       if (perm.receive !== 'granted') {
         pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
@@ -188,8 +200,8 @@ class NativePushService implements PushService {
     }
     await this.attachListeners(Push);
     try {
-      await Push.register();
       pushDiag.registerCalled = true;
+      await Push.register();
       console.log('[push] forceReregister: register() ok');
     } catch (e) {
       pushDiag.registerCallError = (e as Error).message;
@@ -342,6 +354,7 @@ function initAuthPushBridge() {
 
   try {
     supabase.auth.onAuthStateChange((event, session) => {
+      console.log('[push] auth state change', event, !!session?.user?.id);
       try {
         const uid = session?.user?.id ?? null;
         if (event === 'SIGNED_OUT' || !uid) {
@@ -368,10 +381,10 @@ function initAuthPushBridge() {
 }
 
 if (typeof window !== 'undefined') {
-  // Изчакай първия paint и провери native средата runtime, не при module init.
-  setTimeout(() => {
+  // Инициализирай веднага след mount; native check е runtime.
+  queueMicrotask(() => {
     if (isNative() && !PUSH_DISABLED) {
       initAuthPushBridge();
     }
-  }, 1500);
+  });
 }
