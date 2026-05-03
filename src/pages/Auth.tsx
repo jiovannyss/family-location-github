@@ -175,6 +175,10 @@ export default function Auth() {
                   <Input
                     id="email"
                     type="email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    autoComplete="email"
                     placeholder="ivan@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
