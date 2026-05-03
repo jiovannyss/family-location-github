@@ -24,6 +24,14 @@ on:
         options:
           - debug
           - release-aab
+      enable_push:
+        description: 'Активирай Firebase Push (изисква ANDROID_GOOGLE_SERVICES_JSON_BASE64)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   android:
@@ -35,6 +43,7 @@ jobs:
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS:         ${{ secrets.ANDROID_KEY_ALIAS }}
       ANDROID_KEY_PASSWORD:      ${{ secrets.ANDROID_KEY_PASSWORD }}
+      ANDROID_GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_BASE64 }}
 
     steps:
       - uses: actions/checkout@v4
@@ -71,11 +80,27 @@ jobs:
           if [ "$missing" = "1" ]; then exit 1; fi
           echo "✅ All signing secrets present."
 
+      - name: Validate push secret
+        if: ${{ inputs.enable_push == 'true' }}
+        run: |
+          if [ -z "$ANDROID_GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "❌ enable_push=true, но липсва GitHub Secret: ANDROID_GOOGLE_SERVICES_JSON_BASE64"
+            echo "   Свали google-services.json от Firebase Console и го качи като base64:"
+            echo "   base64 -i google-services.json | pbcopy   (macOS)"
+            echo "   base64 -w0 google-services.json           (Linux)"
+            exit 1
+          fi
+          echo "✅ Push secret present."
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Build web bundle
-        run: bun run build
+        env:
+          VITE_ENABLE_PUSH: ${{ inputs.enable_push == 'true' && 'true' || 'false' }}
+        run: |
+          echo "🏗  VITE_ENABLE_PUSH=$VITE_ENABLE_PUSH"
+          bun run build
 
       - name: Add Android platform (if missing)
         run: |
@@ -85,6 +110,17 @@ jobs:
 
       - name: Sync Capacitor
         run: bunx cap sync android
+
+      - name: Install google-services.json (if push enabled)
+        if: ${{ inputs.enable_push == 'true' }}
+        run: |
+          mkdir -p android/app
+          echo "$ANDROID_GOOGLE_SERVICES_JSON_BASE64" | base64 -d > android/app/google-services.json
+          if [ ! -s android/app/google-services.json ]; then
+            echo "❌ Decoded google-services.json е празен — провери base64 съдържанието на secret-а."
+            exit 1
+          fi
+          echo "✅ google-services.json инсталиран в android/app/"
 
       - name: Generate native icons & splash from resources/
         run: |
