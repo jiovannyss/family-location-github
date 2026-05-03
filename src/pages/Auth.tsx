@@ -10,16 +10,26 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-const authSchema = z.object({
+const loginSchema = z.object({
   email: z.string().email('Невалиден имейл адрес'),
   password: z.string().min(6, 'Паролата трябва да е поне 6 символа'),
-  displayName: z.string().min(2, 'Името трябва да е поне 2 символа').optional(),
+});
+
+const signupSchema = z.object({
+  email: z.string().email('Невалиден имейл адрес'),
+  password: z.string().min(6, 'Паролата трябва да е поне 6 символа'),
+  confirmPassword: z.string().min(6, 'Моля, потвърдете паролата'),
+  displayName: z.string().min(2, 'Името трябва да е поне 2 символа'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Паролите не съвпадат',
+  path: ['confirmPassword'],
 });
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -30,9 +40,9 @@ export default function Auth() {
   const validateForm = () => {
     try {
       if (isLogin) {
-        authSchema.pick({ email: true, password: true }).parse({ email, password });
+        loginSchema.parse({ email, password });
       } else {
-        authSchema.parse({ email, password, displayName });
+        signupSchema.parse({ email, password, confirmPassword, displayName });
       }
       setErrors({});
       return true;
@@ -182,6 +192,34 @@ export default function Auth() {
                   <p className="text-sm text-destructive">{errors.password}</p>
                 )}
               </div>
+
+              {!isLogin && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2"
+                >
+                  <Label htmlFor="confirmPassword">Повторете паролата</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      placeholder="••••••••"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  {errors.confirmPassword && (
+                    <p className="text-sm text-destructive">{errors.confirmPassword}</p>
+                  )}
+                  {!errors.confirmPassword && confirmPassword.length > 0 && password !== confirmPassword && (
+                    <p className="text-sm text-destructive">Паролите не съвпадат</p>
+                  )}
+                </motion.div>
+              )}
 
               <Button
                 type="submit"
