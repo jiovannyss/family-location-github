@@ -21,7 +21,9 @@ interface Props {
 export default function BackgroundLocationRationale({ open, onAccept, onDecline }: Props) {
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onDecline(); }}>
-      <DialogContent className="max-w-md">
+      <DialogContent
+        className="max-w-md max-h-[90dvh] overflow-y-auto p-4 sm:p-6 top-[5dvh] translate-y-0 sm:top-[50%] sm:translate-y-[-50%] overscroll-contain"
+      >
         <DialogHeader>
           <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-3 mx-auto">
             <MapPin className="w-7 h-7" />
