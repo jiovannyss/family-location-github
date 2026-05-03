@@ -10,10 +10,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
-const authSchema = z.object({
+const loginSchema = z.object({
   email: z.string().email('Невалиден имейл адрес'),
   password: z.string().min(6, 'Паролата трябва да е поне 6 символа'),
-  displayName: z.string().min(2, 'Името трябва да е поне 2 символа').optional(),
+});
+
+const signupSchema = z.object({
+  email: z.string().email('Невалиден имейл адрес'),
+  password: z.string().min(6, 'Паролата трябва да е поне 6 символа'),
+  confirmPassword: z.string().min(6, 'Моля, потвърдете паролата'),
+  displayName: z.string().min(2, 'Името трябва да е поне 2 символа'),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: 'Паролите не съвпадат',
+  path: ['confirmPassword'],
 });
 
 export default function Auth() {
