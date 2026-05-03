@@ -99,6 +99,7 @@ export default function Auth() {
           }
           return;
         }
+        await storage.set(LAST_EMAIL_KEY, email);
         toast.success('Успешна регистрация! Вече сте влезли.');
         navigate('/');
       }
