@@ -232,7 +232,13 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
               <p className="text-sm">Създайте нов или се присъединете към съществуващ</p>
             </motion.div>
           ) : (
-            circles?.map((circle) => (
+            circles?.map((circle) => {
+              const circleUnread = user
+                ? messages.filter(
+                    (m) => m.circle_id === circle.id && m.recipient_id === user.id && !m.read_at
+                  ).length
+                : 0;
+              return (
               <motion.div
                 key={circle.id}
                 layout
@@ -246,7 +252,7 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                       ? 'ring-2 ring-primary shadow-md' 
                       : 'hover:bg-secondary/50'
                   }`}
-                  onClick={() => onSelectCircle(circle)}
+                  onClick={() => onSelectCircle(selectedCircle?.id === circle.id ? null : circle)}
                 >
                   <CardContent className="p-3 sm:p-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
