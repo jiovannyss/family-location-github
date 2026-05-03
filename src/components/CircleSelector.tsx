@@ -328,7 +328,8 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                   </CardContent>
                 </Card>
               </motion.div>
-            ))
+              );
+            })
           )}
         </AnimatePresence>
       </div>
