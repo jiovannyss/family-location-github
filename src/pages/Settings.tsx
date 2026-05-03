@@ -115,8 +115,9 @@ export default function Settings() {
           className="space-y-6"
         >
           <div className="flex items-center gap-2 sm:gap-4 sticky top-[calc(3.5rem+env(safe-area-inset-top)+0.25rem)] z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 py-1">
-            <Button variant="outline" size="icon" onClick={() => navigate('/')} aria-label="Назад към началото">
+            <Button variant="outline" size="sm" onClick={() => navigate('/')} aria-label="Назад към началото" className="shrink-0 gap-2">
               <ArrowLeft className="w-5 h-5" />
+              <span>Назад</span>
             </Button>
             <h1 className="text-2xl font-bold text-foreground">Настройки</h1>
           </div>
