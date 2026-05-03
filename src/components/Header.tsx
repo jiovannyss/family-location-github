@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { MapPin, Settings, LogOut, User, Loader2 } from 'lucide-react';
+import { MapPin, Settings, LogOut, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -80,10 +80,6 @@ export default function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/settings')}>
-              <User className="w-4 h-4 mr-2" />
-              Профил
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate('/settings')}>
               <Settings className="w-4 h-4 mr-2" />
               Настройки

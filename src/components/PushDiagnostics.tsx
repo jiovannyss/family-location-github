@@ -31,6 +31,7 @@ interface Diag {
   lastDbUpsertError: string | null;
   lastDbUpsertAt: string | null;
   listenersAttached: boolean;
+  pluginLoadError: string | null;
 }
 
 export default function PushDiagnostics() {
@@ -98,6 +99,7 @@ export default function PushDiagnostics() {
         lastDbUpsertError: pushDiag.lastDbUpsertError,
         lastDbUpsertAt: pushDiag.lastDbUpsertAt,
         listenersAttached: pushDiag.listenersAttached,
+        pluginLoadError: pushDiag.pluginLoadError,
       });
     } finally {
       setLoading(false);

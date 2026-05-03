@@ -62,8 +62,32 @@ export function useMessages() {
         console.log(`[realtime] ${channelName} status:`, status);
       });
 
+    // При resume на native app-а refresh-ни (websocket може да е прекъснал)
+    // + refresh при visibility change в browser/WebView.
+    const onVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        queryClient.invalidateQueries({ queryKey: ['messages', user.id] });
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    let removeAppListener: (() => void) | null = null;
+    void import('@capacitor/app').then(({ App }) => {
+      App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) {
+          queryClient.invalidateQueries({ queryKey: ['messages', user.id] });
+        }
+      }).then((h) => { removeAppListener = () => { void h.remove(); }; })
+        .catch(() => { /* ignore on web */ });
+    }).catch(() => { /* ignore */ });
+
     return () => {
       supabase.removeChannel(channel);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibility);
+      }
+      if (removeAppListener) removeAppListener();
     };
   }, [user?.id, queryClient]);
 

@@ -36,7 +36,7 @@ export interface PushDiagState {
   lastDbUpsertAt: string | null;
   listenersAttached: boolean;
 }
-export const pushDiag: PushDiagState = {
+export const pushDiag: PushDiagState & { pluginLoadError: string | null } = {
   registerCalled: false,
   registerCallError: null,
   registrationEventFired: false,
@@ -46,6 +46,7 @@ export const pushDiag: PushDiagState = {
   lastDbUpsertError: null,
   lastDbUpsertAt: null,
   listenersAttached: false,
+  pluginLoadError: null,
 };
 
 export interface PushService {
@@ -67,9 +68,32 @@ type PushPlugin = typeof import('@capacitor/push-notifications').PushNotificatio
 let pushPluginPromise: Promise<PushPlugin | null> | null = null;
 async function loadPushPlugin(): Promise<PushPlugin | null> {
   if (!pushPluginPromise) {
-    pushPluginPromise = import('@capacitor/push-notifications')
-      .then((m) => m.PushNotifications)
-      .catch((e) => { console.warn('[push] plugin import failed', e); return null; });
+    pushPluginPromise = (async () => {
+      try {
+        const m = await import('@capacitor/push-notifications');
+        if (!m?.PushNotifications) {
+          pushDiag.pluginLoadError = 'PushNotifications export missing';
+          console.warn('[push] PushNotifications export missing on module', Object.keys(m || {}));
+          return null;
+        }
+        // Sanity: проверка че plugin-ът е реално регистриран в native bridge
+        try {
+          await m.PushNotifications.checkPermissions();
+        } catch (e) {
+          const msg = (e as Error).message || String(e);
+          pushDiag.pluginLoadError = 'checkPermissions failed: ' + msg;
+          console.warn('[push] checkPermissions probe failed', e);
+          // Връщаме plugin-а въпреки това — register() може да даде по-точна грешка
+        }
+        pushDiag.pluginLoadError = null;
+        return m.PushNotifications;
+      } catch (e) {
+        const msg = (e as Error).message || String(e);
+        console.warn('[push] plugin import failed', e);
+        pushDiag.pluginLoadError = msg;
+        return null;
+      }
+    })();
   }
   return pushPluginPromise;
 }
@@ -141,7 +165,25 @@ class NativePushService implements PushService {
     pushDiag.registrationError = null;
     pushDiag.lastDbUpsertError = null;
     const Push = await loadPushPlugin();
-    if (!Push) return;
+    if (!Push) {
+      pushDiag.registerCallError = 'plugin not loaded: ' + (pushDiag.pluginLoadError ?? 'unknown');
+      console.warn('[push] forceReregister: plugin not loaded');
+      return;
+    }
+    // Make sure permission is granted before register()
+    try {
+      let perm = await Push.checkPermissions();
+      if (perm.receive !== 'granted') {
+        perm = await Push.requestPermissions();
+      }
+      if (perm.receive !== 'granted') {
+        pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
+        return;
+      }
+    } catch (e) {
+      pushDiag.registerCallError = 'perm check failed: ' + (e as Error).message;
+      return;
+    }
     await this.attachListeners(Push);
     try {
       await Push.register();

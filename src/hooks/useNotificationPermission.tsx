@@ -41,6 +41,10 @@ export function useNotificationPermission() {
   }, []);
 
   const request = useCallback(async (): Promise<PermState> => {
+    // Маркирай веднага като "asked" → UI prompt-ът изчезва даже ако
+    // системният dialog още не е отговорил/потребителят го затвори.
+    await markAsked();
+
     let result: PermState = 'default';
     try {
       result = (await notifications.requestPermission()) as PermState;
@@ -51,12 +55,16 @@ export function useNotificationPermission() {
 
     // На native: ако local notifications са granted → веднага искаме
     // и POST_NOTIFICATIONS за push (Android 13+) и регистрираме FCM token.
-    if (isNative() && result === 'granted') {
+    if (isNative()) {
       try {
         const { data: sess } = await supabase.auth.getSession();
         const uid = sess.session?.user?.id;
         if (uid) {
+          // forceReregister вътрешно прави requestPermissions() за push
+          // (POST_NOTIFICATIONS на Android 13+) и след това register().
           await push.forceReregister(uid);
+          // Re-check след регистрацията
+          result = await readPermission();
         }
       } catch (e) {
         console.warn('[notifications] push register after grant failed', e);
@@ -64,7 +72,6 @@ export function useNotificationPermission() {
     }
 
     setPermission(result);
-    await markAsked();
     if (result === 'granted') {
       toast.success('Известията са включени');
     } else if (result === 'denied') {
