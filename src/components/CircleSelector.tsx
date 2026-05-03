@@ -260,7 +260,14 @@ export default function CircleSelector({ selectedCircle, onSelectCircle }: Circl
                         <Users className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <h3 className="font-medium text-sm sm:text-base text-foreground truncate">{circle.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-sm sm:text-base text-foreground truncate">{circle.name}</h3>
+                          {circleUnread > 0 && (
+                            <Badge variant="destructive" className="h-5 min-w-[1.25rem] px-1.5 text-[10px] flex-shrink-0">
+                              {circleUnread > 99 ? '99+' : circleUnread}
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-xs sm:text-sm text-muted-foreground">
                           {circle.owner_id === user?.id ? 'Собственик' : 'Член'}
                         </p>
