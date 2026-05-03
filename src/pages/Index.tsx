@@ -120,7 +120,7 @@ const Index = () => {
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="bg-card rounded-xl border border-border overflow-hidden shadow-sm h-[calc(100vh-200px)] lg:h-auto lg:min-h-[calc(100vh-140px)]"
+      className="bg-card rounded-xl border border-border overflow-hidden shadow-sm h-[calc(100vh-200px)] lg:h-full"
     >
       {selectedCircle && members && members.length > 0 ? (
         <LocationMap
@@ -181,9 +181,11 @@ const Index = () => {
           </Button>
         </div>
 
-        {/* Desktop: two columns */}
-        <div className="hidden lg:grid lg:grid-cols-[380px,1fr] gap-6">
-          {sidebarContent}
+        {/* Desktop: two columns — map fixed to viewport, sidebar scrolls */}
+        <div className="hidden lg:grid lg:grid-cols-[380px,1fr] gap-6 lg:h-[calc(100vh-4rem-env(safe-area-inset-top)-3rem)]">
+          <div className="overflow-y-auto pr-2 -mr-2">
+            {sidebarContent}
+          </div>
           {mapContent}
         </div>
 
