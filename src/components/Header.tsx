@@ -40,7 +40,8 @@ export default function Header() {
     <motion.header
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="sticky top-0 z-50 glass border-b border-border/50"
+      className="fixed top-0 inset-x-0 z-50 glass border-b border-border/50"
+      style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       <div className="container flex items-center justify-between h-14 sm:h-16 px-3 sm:px-4 max-w-7xl">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
