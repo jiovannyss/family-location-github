@@ -253,6 +253,13 @@ class NativePushService implements PushService {
           title: notification.title || 'Ново съобщение',
           body: notification.body,
         });
+        // Ако payload-ът носи unread_count → синхронизирай badge-а веднага,
+        // за да не чакаме realtime + useMessages да обновят бройката.
+        const raw = notification.data?.unread_count;
+        const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
+        if (Number.isFinite(n) && n >= 0) {
+          void import('./appBadge').then(({ setAppBadge }) => setAppBadge(n)).catch(() => {});
+        }
       });
     } catch (e) {
       console.warn('[push] attachListeners failed', e);
