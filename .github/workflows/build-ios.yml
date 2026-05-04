@@ -97,10 +97,8 @@ jobs:
 
       - name: Add iOS platform (if missing)
         run: |
-          # Ако няма пълен iOS native проект (липсва Podfile), пресъздай платформата.
-          if [ ! -f "ios/App/Podfile" ]; then
-            echo "ℹ️ ios/App/Podfile not found — (re)adding iOS platform."
-            rm -rf ios
+          if [ ! -d "ios/App" ]; then
+            echo "ℹ️ iOS platform missing — adding."
             bunx cap add ios
           else
             echo "✅ iOS platform already present."
@@ -109,17 +107,23 @@ jobs:
       - name: Sync Capacitor
         run: bunx cap sync ios
 
-      - name: Verify Podfile exists
+      - name: Detect dependency manager (CocoaPods vs SPM)
+        id: deps
         run: |
-          if [ ! -f "ios/App/Podfile" ]; then
-            echo "❌ ios/App/Podfile still missing after cap add/sync."
-            ls -la ios || true
+          if [ -f "ios/App/Podfile" ]; then
+            echo "manager=cocoapods" >> "$GITHUB_OUTPUT"
+            echo "📦 Using CocoaPods (Podfile detected)."
+          elif find ios/App -maxdepth 4 -type d -name "CapApp-SPM" | grep -q .; then
+            echo "manager=spm" >> "$GITHUB_OUTPUT"
+            echo "📦 Using Swift Package Manager (Capacitor 6+)."
+          else
+            echo "❌ Не мога да открия нито Podfile, нито SPM пакет."
             ls -la ios/App || true
             exit 1
           fi
-          echo "✅ Podfile found."
 
-      - name: Install CocoaPods
+      - name: Install CocoaPods (only if Podfile exists)
+        if: steps.deps.outputs.manager == 'cocoapods'
         working-directory: ios/App
         run: pod install --repo-update
 
@@ -231,8 +235,14 @@ jobs:
       - name: xcodebuild archive (device)
         working-directory: ios/App
         run: |
+          # При SPM няма .xcworkspace — ползваме .xcodeproj директно.
+          if [ -d "App.xcworkspace" ]; then
+            PROJECT_FLAG=(-workspace App.xcworkspace)
+          else
+            PROJECT_FLAG=(-project App.xcodeproj)
+          fi
           xcodebuild \
-            -workspace App.xcworkspace \
+            "${PROJECT_FLAG[@]}" \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
