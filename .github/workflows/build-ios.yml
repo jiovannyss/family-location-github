@@ -263,8 +263,10 @@ jobs:
       # ----- Validate срещу App Store (винаги, безопасно) -----
       - name: Validate .ipa against App Store
         if: ${{ inputs.build_type == 'validate' || inputs.build_type == 'testflight' }}
-        env:
+         env:
           IPA_PATH: ${{ steps.ipa.outputs.ipa_path }}
+          # altool чете .p8 от ./private_keys или ~/private_keys
+          API_PRIVATE_KEYS_DIR: ${{ env.ASC_KEY_DIR }}
         run: |
           set +x
           xcrun altool --validate-app \
@@ -272,9 +274,6 @@ jobs:
             -t ios \
             --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
             --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
-        env:
-          # altool чете .p8 от ./private_keys или ~/private_keys
-          API_PRIVATE_KEYS_DIR: ${{ env.ASC_KEY_DIR }}
 
       # ----- TestFlight upload (само при testflight) -----
       - name: Upload to TestFlight
