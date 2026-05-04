@@ -235,8 +235,14 @@ jobs:
       - name: xcodebuild archive (device)
         working-directory: ios/App
         run: |
+          # При SPM няма .xcworkspace — ползваме .xcodeproj директно.
+          if [ -d "App.xcworkspace" ]; then
+            PROJECT_FLAG=(-workspace App.xcworkspace)
+          else
+            PROJECT_FLAG=(-project App.xcodeproj)
+          fi
           xcodebuild \
-            -workspace App.xcworkspace \
+            "${PROJECT_FLAG[@]}" \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
