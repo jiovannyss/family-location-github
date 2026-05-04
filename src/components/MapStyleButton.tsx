@@ -32,7 +32,7 @@ export default function MapStyleButton() {
   };
 
   return (
-    <div className="absolute top-3 right-3 z-[400]">
+    <div className="absolute top-3 right-3 z-10">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
@@ -47,7 +47,7 @@ export default function MapStyleButton() {
           align="end"
           side="bottom"
           sideOffset={8}
-          className="w-64 p-2 z-[401]"
+          className="w-64 p-2 z-[60]"
         >
           <p className="text-xs font-medium text-muted-foreground px-2 py-1.5">
             Стил на картата
