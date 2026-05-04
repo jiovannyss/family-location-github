@@ -34,7 +34,7 @@ on:
 
 jobs:
   ios:
-    runs-on: macos-14
+    runs-on: macos-26
 
     env:
       IOS_DIST_CERTIFICATE_P12_BASE64:    ${{ secrets.IOS_DIST_CERTIFICATE_P12_BASE64 }}
@@ -88,6 +88,32 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Select Xcode 26 and verify iOS SDK
+        run: |
+          set -e
+
+          XCODE_26_APP="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n1 || true)"
+          if [ -n "$XCODE_26_APP" ]; then
+            sudo xcode-select -s "$XCODE_26_APP/Contents/Developer"
+            echo "✅ Selected $(basename "$XCODE_26_APP")"
+          else
+            echo "ℹ️ No explicit /Applications/Xcode_26*.app found; using runner default Xcode."
+          fi
+
+          XCODE_VERSION="$(xcodebuild -version | tr '\n' ' ' | sed 's/  */ /g')"
+          IOS_SDK_VERSION="$(xcrun --sdk iphoneos --show-sdk-version)"
+
+          echo "🛠️ $XCODE_VERSION"
+          echo "📱 iphoneos SDK: $IOS_SDK_VERSION"
+
+          SDK_MAJOR="${IOS_SDK_VERSION%%.*}"
+          if [ "$SDK_MAJOR" -lt 26 ]; then
+            echo "❌ Runner is using iOS SDK $IOS_SDK_VERSION, but App Store now requires iOS 26 SDK or newer."
+            exit 1
+          fi
+
+          echo "✅ Xcode / SDK requirement satisfied."
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
