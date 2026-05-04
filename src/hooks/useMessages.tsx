@@ -49,7 +49,8 @@ export function useMessages() {
         (payload) => {
           const row = payload.new as MessageRow;
           console.log('[realtime] message INSERT for me:', row?.id);
-          if (row && row.sender_id !== user.id) {
+          if (row && row.sender_id !== user.id && row.id && !notifiedMessageIds.has(row.id)) {
+            markNotified(row.id);
             notifications.notify({ title: 'Ново съобщение', body: row.body });
           }
           queryClient.invalidateQueries({ queryKey: ['messages', user.id] });
