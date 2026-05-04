@@ -136,9 +136,41 @@ jobs:
 
           echo "✅ Xcode / SDK изискването е изпълнено."
 
-          # Експортирай за следващите стъпки — ще ползваме точната SDK версия
-          # вместо общото 'iphoneos', за да избегнем 'platform not installed'.
           echo "IOS_SDK_VERSION=$IOS_SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Ensure iOS device platform is installed
+        run: |
+          set -e
+          # Проверка: 'xcodebuild -showsdks' може да върне SDK-то като инсталирано,
+          # но истинският тест е дали 'simctl list runtimes' / DVTDownloadableIndex
+          # съдържат iOS device platform. На beta Xcode runner-и платформата често
+          # липсва → 'iOS X.Y is not installed'.
+          PLATFORM_DIR="$(xcrun --sdk iphoneos --show-sdk-platform-path 2>/dev/null || true)"
+          echo "📁 Platform dir: $PLATFORM_DIR"
+
+          NEEDS_DOWNLOAD=0
+          if [ -z "$PLATFORM_DIR" ] || [ ! -d "$PLATFORM_DIR/Developer/Library/CoreDevice" ]; then
+            NEEDS_DOWNLOAD=1
+          fi
+
+          # Допълнителна евристика: SDK-то съществува ли изобщо?
+          if ! xcodebuild -showsdks 2>/dev/null | grep -qi "iphoneos"; then
+            NEEDS_DOWNLOAD=1
+          fi
+
+          if [ "$NEEDS_DOWNLOAD" = "0" ]; then
+            echo "✅ iOS device platform изглежда инсталирана."
+          else
+            echo "⚠️ iOS platform липсва — изтеглям с 'xcodebuild -downloadPlatform iOS'..."
+            sudo xcodebuild -downloadPlatform iOS 2>&1 | tail -n 50 || {
+              echo "❌ -downloadPlatform fail-на."
+              exit 1
+            }
+            echo "✅ iOS platform изтеглена."
+          fi
+
+          echo "📲 SDK-та след проверка:"
+          xcodebuild -showsdks 2>/dev/null | grep -i iphoneos || true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
