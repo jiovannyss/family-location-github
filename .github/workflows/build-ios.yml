@@ -155,6 +155,26 @@ jobs:
       - name: Create temporary keychain & import certificate
         run: |
           set +x
+          PEM_PATH="$RUNNER_TEMP/dist_cert.pem"
+          COMPAT_CERT_PATH="$RUNNER_TEMP/dist_cert_compat.p12"
+
+          # Някои .p12 файлове, експортнати с по-нов OpenSSL, минават през openssl,
+          # но се чупят при macOS security import. Преекспортираме до legacy-съвместим формат.
+          openssl pkcs12 -in "$CERT_PATH" \
+            -passin pass:"$IOS_DIST_CERTIFICATE_PASSWORD" \
+            -nodes \
+            -out "$PEM_PATH"
+
+          openssl pkcs12 -export \
+            -in "$PEM_PATH" \
+            -out "$COMPAT_CERT_PATH" \
+            -passout pass:"$IOS_DIST_CERTIFICATE_PASSWORD" \
+            -legacy \
+            -keypbe PBE-SHA1-3DES \
+            -certpbe PBE-SHA1-3DES \
+            -macalg sha1 \
+            -name "Apple Distribution"
+
           # Create temporary keychain
           security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -164,7 +184,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
           # Import certificate
-          security import "$CERT_PATH" \
+          security import "$COMPAT_CERT_PATH" \
             -k "$KEYCHAIN_PATH" \
             -P "$IOS_DIST_CERTIFICATE_PASSWORD" \
             -T /usr/bin/codesign \
@@ -178,6 +198,8 @@ jobs:
 
           # Изтрий .p12 от диска
           rm -f "$CERT_PATH"
+          rm -f "$PEM_PATH"
+          rm -f "$COMPAT_CERT_PATH"
 
           echo "✅ Keychain ready."
 
