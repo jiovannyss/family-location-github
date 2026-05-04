@@ -8,6 +8,7 @@ import { useCircleMembers, useCircles } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
 import { useAppBadgeSync } from '@/hooks/useAppBadge';
 import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
+import { useMapStyleSync } from '@/hooks/useMapStyleSync';
 import { Circle, MemberWithLocation } from '@/lib/types';
 import Header from '@/components/Header';
 import CircleSelector from '@/components/CircleSelector';
@@ -41,6 +42,8 @@ const Index = () => {
   useAppBadgeSync();
   // Android hardware back → минимизирай вместо да пращаш в /auth
   useHardwareBackButton();
+  // Sync избора на стил на картата с базата (между устройства)
+  useMapStyleSync();
 
   // Always derive the selected member from the latest members list
   const selectedMember = useMemo<MemberWithLocation | null>(() => {
