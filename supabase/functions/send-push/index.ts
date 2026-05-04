@@ -139,6 +139,25 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Преброяваме непрочетените съобщения за получателя — използва се
+    // за app icon badge (число върху иконата на приложението).
+    let unreadCount = 0;
+    try {
+      const { count, error: cntErr } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('recipient_id', payload.recipient_id)
+        .is('read_at', null);
+      if (cntErr) {
+        log('unread count error', cntErr);
+      } else {
+        unreadCount = count ?? 0;
+      }
+    } catch (e) {
+      log('unread count exception', e);
+    }
+    log(`unread count for recipient: ${unreadCount}`);
+
     const saJson = Deno.env.get('FCM_SERVICE_ACCOUNT_JSON');
     if (!saJson) {
       log('FCM_SERVICE_ACCOUNT_JSON MISSING — push not configured');
@@ -154,6 +173,28 @@ Deno.serve(async (req) => {
     let sent = 0;
     const failedTokens: string[] = [];
     for (const t of tokens) {
+      // FCM v1 message с badge поддръжка:
+      //  - Android: notification_count в AndroidNotification → стоковият
+      //    Pixel/AOSP launcher показва точка (не число); Samsung/Xiaomi/MIUI
+      //    launcher-ите показват число.
+      //  - iOS: aps.badge → системно число върху иконата.
+      //  - data.unread_count — клиентът може да го прочете при foreground push
+      //    и да синхронизира @capawesome/capacitor-badge.
+      const message: Record<string, unknown> = {
+        token: t.token,
+        notification: { title: payload.title, body: payload.body },
+        data: { unread_count: String(unreadCount) },
+        android: {
+          notification: {
+            notification_count: unreadCount,
+          },
+        },
+        apns: {
+          payload: {
+            aps: { badge: unreadCount },
+          },
+        },
+      };
       const res = await fetch(
         `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
         {
@@ -162,12 +203,7 @@ Deno.serve(async (req) => {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            message: {
-              token: t.token,
-              notification: { title: payload.title, body: payload.body },
-            },
-          }),
+          body: JSON.stringify({ message }),
         }
       );
       const txt = await res.text();
