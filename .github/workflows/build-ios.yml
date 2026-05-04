@@ -158,14 +158,22 @@ jobs:
           PEM_PATH="$RUNNER_TEMP/dist_cert.pem"
           COMPAT_CERT_PATH="$RUNNER_TEMP/dist_cert_compat.p12"
 
-          # Някои .p12 файлове, експортнати с по-нов OpenSSL, минават през openssl,
-          # но се чупят при macOS security import. Преекспортираме до legacy-съвместим формат.
-          openssl pkcs12 -in "$CERT_PATH" \
+          # macOS runner има LibreSSL по подразбиране (без -legacy флаг).
+          # Използваме Homebrew OpenSSL 3, който поддържа -legacy.
+          OPENSSL_BIN="$(brew --prefix openssl@3)/bin/openssl"
+          if [ ! -x "$OPENSSL_BIN" ]; then
+            echo "❌ Homebrew openssl@3 не е намерен на $OPENSSL_BIN"
+            exit 1
+          fi
+          echo "🔧 Using $($OPENSSL_BIN version)"
+
+          # Преекспортираме до legacy-съвместим формат за macOS security import.
+          "$OPENSSL_BIN" pkcs12 -in "$CERT_PATH" \
             -passin pass:"$IOS_DIST_CERTIFICATE_PASSWORD" \
-            -nodes \
+            -nodes -legacy \
             -out "$PEM_PATH"
 
-          openssl pkcs12 -export \
+          "$OPENSSL_BIN" pkcs12 -export \
             -in "$PEM_PATH" \
             -out "$COMPAT_CERT_PATH" \
             -passout pass:"$IOS_DIST_CERTIFICATE_PASSWORD" \
