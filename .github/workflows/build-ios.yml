@@ -480,6 +480,7 @@ jobs:
             bs['CODE_SIGN_IDENTITY'] = 'Apple Distribution'
             bs['CODE_SIGN_IDENTITY[sdk=iphoneos*]'] = 'Apple Distribution'
             bs['PRODUCT_BUNDLE_IDENTIFIER'] = ENV['BUNDLE_ID']
+            bs['CODE_SIGN_ENTITLEMENTS'] = 'App/App.entitlements'
             puts "  #{config.name}: signing configured."
           end
           project.save
