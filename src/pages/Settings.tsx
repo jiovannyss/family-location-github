@@ -39,6 +39,13 @@ export default function Settings() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [versionInfo, setVersionInfo] = useState<AppVersionInfo>({ version: APP_VERSION });
+  const [mapStyle, setMapStyle] = useState<MapStyleId>(() => getStoredMapStyle());
+
+  const handleMapStyleChange = (id: MapStyleId) => {
+    setMapStyle(id);
+    setStoredMapStyle(id);
+    toast.success(`Стилът на картата е сменен на ${MAP_STYLES[id].name}`);
+  };
 
   useEffect(() => {
     getAppVersionInfo().then(setVersionInfo).catch(() => { /* ignore */ });
