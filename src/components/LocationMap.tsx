@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MemberWithLocation } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { bg } from 'date-fns/locale';
+import { getMapStyleConfig, getStoredMapStyle, MapStyleId } from '@/lib/mapStyle';
 
 interface LocationMapProps {
   members: MemberWithLocation[];
