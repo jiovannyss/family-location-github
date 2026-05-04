@@ -134,10 +134,10 @@
 }
 
 @layer components {
-  /* Map container styles */
+  /* Map container styles. Закръгляне/border-ът се задават от родителя
+     (виж Index.tsx), за да не се получават двойни/застъпени ръбове в уеб. */
   .map-container {
-    @apply w-full h-full rounded-xl overflow-hidden;
-    box-shadow: var(--shadow-lg);
+    @apply w-full h-full overflow-hidden;
   }
 
   /* Location marker pulse animation */
