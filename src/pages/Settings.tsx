@@ -37,6 +37,11 @@ export default function Settings() {
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
+  const [versionInfo, setVersionInfo] = useState<AppVersionInfo>({ version: APP_VERSION });
+
+  useEffect(() => {
+    getAppVersionInfo().then(setVersionInfo).catch(() => { /* ignore */ });
+  }, []);
 
   useHardwareBackButton();
 
