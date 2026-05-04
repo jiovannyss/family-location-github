@@ -275,10 +275,44 @@ jobs:
         run: |
           set +x
           mkdir -p "$ASC_KEY_DIR"
-          echo "$APP_STORE_CONNECT_API_KEY_P8_BASE64" | base64 --decode \
-            > "$ASC_KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
-          chmod 600 "$ASC_KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
-          echo "✅ ASC API key in place."
+          KEY_PATH="$ASC_KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          HOME_KEY_DIR="$HOME/private_keys"
+          HOME_KEY_PATH="$HOME_KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+
+          if printf '%s' "$APP_STORE_CONNECT_API_KEY_P8_BASE64" | grep -q "BEGIN PRIVATE KEY"; then
+            printf '%s\n' "$APP_STORE_CONNECT_API_KEY_P8_BASE64" > "$KEY_PATH"
+            echo "ℹ️ ASC key secret appears to be raw .p8 content; saved without base64 decoding."
+          else
+            printf '%s' "$APP_STORE_CONNECT_API_KEY_P8_BASE64" | base64 --decode > "$KEY_PATH"
+            echo "ℹ️ ASC key secret appears to be base64; decoded successfully."
+          fi
+
+          KEY_PATH="$KEY_PATH" python3 - <<'PY'
+          from pathlib import Path
+          import os, sys
+
+          key_path = Path(os.environ['KEY_PATH'])
+          try:
+            content = key_path.read_text(encoding='utf-8')
+          except UnicodeDecodeError:
+            print('❌ App Store Connect API key is not valid UTF-8 text after processing.')
+            print('   Secret APP_STORE_CONNECT_API_KEY_P8_BASE64 is likely in the wrong format.')
+            sys.exit(1)
+
+          normalized = content.strip()
+          if 'BEGIN PRIVATE KEY' not in normalized or 'END PRIVATE KEY' not in normalized:
+            print('❌ App Store Connect API key does not look like a valid .p8 private key.')
+            print('   Expected PEM text with BEGIN/END PRIVATE KEY markers.')
+            sys.exit(1)
+
+          print('✅ ASC API key file validated as UTF-8 PEM text.')
+          PY
+
+          chmod 600 "$KEY_PATH"
+          mkdir -p "$HOME_KEY_DIR"
+          cp "$KEY_PATH" "$HOME_KEY_PATH"
+          chmod 600 "$HOME_KEY_PATH"
+          echo "✅ ASC API key installed in runner and home private_keys directory."
 
       # ----- Patch App target signing settings (App target ONLY, not frameworks) -----
       - name: Apply signing settings ONLY to App target
@@ -444,6 +478,8 @@ jobs:
           security delete-keychain "$KEYCHAIN_PATH" || true
           rm -f "$PROFILE_PATH" || true
           rm -f "$CERT_PATH" || true
+          rm -f "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" || true
+          rmdir "$HOME/private_keys" 2>/dev/null || true
           if [ -n "$PROFILE_UUID" ]; then
             rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision" || true
           fi
