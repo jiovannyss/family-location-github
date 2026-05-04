@@ -4,7 +4,19 @@ import 'leaflet/dist/leaflet.css';
 import { MemberWithLocation } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { bg } from 'date-fns/locale';
-import { getMapStyleConfig, getStoredMapStyle, MapStyleId } from '@/lib/mapStyle';
+import { getMapStyleConfig, getStoredMapStyle, MAP_STYLES, MapStyleId, MapStyleConfig } from '@/lib/mapStyle';
+
+function buildTileLayer(cfg: MapStyleConfig): L.TileLayer {
+  const opts: L.TileLayerOptions = {
+    attribution: cfg.attribution,
+    maxZoom: cfg.maxZoom,
+    detectRetina: true,
+  };
+  if (cfg.subdomains !== undefined) {
+    opts.subdomains = cfg.subdomains;
+  }
+  return L.tileLayer(cfg.url, opts);
+}
 
 interface LocationMapProps {
   members: MemberWithLocation[];
@@ -244,11 +256,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
 
     const map = L.map(mapContainerRef.current, { zoomControl: true });
     const initialStyle = getMapStyleConfig(mapStyleId);
-    const tile = L.tileLayer(initialStyle.url, {
-      attribution: initialStyle.attribution,
-      maxZoom: initialStyle.maxZoom,
-      detectRetina: true,
-    }).addTo(map);
+    const tile = buildTileLayer(initialStyle).addTo(map);
     tileLayerRef.current = tile;
 
     map.setView(defaultCenter, 13);
@@ -289,7 +297,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<MapStyleId>).detail;
-      if (detail === 'voyager' || detail === 'positron') {
+      if (detail && detail in MAP_STYLES) {
         setMapStyleId(detail);
       }
     };
@@ -312,11 +320,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current);
     }
-    tileLayerRef.current = L.tileLayer(cfg.url, {
-      attribution: cfg.attribution,
-      maxZoom: cfg.maxZoom,
-      detectRetina: true,
-    }).addTo(map);
+    tileLayerRef.current = buildTileLayer(cfg).addTo(map);
   }, [mapStyleId]);
 
   useEffect(() => {
