@@ -128,12 +128,33 @@ jobs:
         run: pod install --repo-update
 
       # ----- Signing material setup -----
+      - name: Preflight PKCS12 secrets check
+        run: |
+          set +x
+          echo "$IOS_DIST_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          if [ -n "$IOS_DIST_CERTIFICATE_PASSWORD" ]; then
+            echo "✅ IOS_DIST_CERTIFICATE_PASSWORD is non-empty."
+          else
+            echo "❌ IOS_DIST_CERTIFICATE_PASSWORD is empty."
+            exit 1
+          fi
+
+          CERT_SIZE=$(stat -f%z "$CERT_PATH")
+          CERT_SHA256=$(shasum -a 256 "$CERT_PATH" | awk '{print $1}')
+          echo "📦 Decoded .p12 size: ${CERT_SIZE} bytes"
+          echo "🔐 Decoded .p12 SHA256: ${CERT_SHA256}"
+
+          if ! openssl pkcs12 -info -in "$CERT_PATH" -nokeys -passin pass:"$IOS_DIST_CERTIFICATE_PASSWORD" >/dev/null 2>&1; then
+            echo "❌ PKCS12 preflight failed: decoded file and password do not match."
+            exit 1
+          fi
+
+          echo "✅ PKCS12 preflight passed."
+
       - name: Create temporary keychain & import certificate
         run: |
           set +x
-          # Decode .p12
-          echo "$IOS_DIST_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
-
           # Create temporary keychain
           security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
