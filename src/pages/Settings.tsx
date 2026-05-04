@@ -1,17 +1,30 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Map as MapIcon, Check } from 'lucide-react';
+import { ArrowLeft, Map as MapIcon, Check, Palette, Sun, Moon, Monitor } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Header from '@/components/Header';
 import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
+import { useTheme, ThemeMode } from '@/hooks/useTheme';
 import { MAP_STYLES, MapStyleId, getStoredMapStyle, setStoredMapStyle } from '@/lib/mapStyle';
 
 export default function Settings() {
   const navigate = useNavigate();
   const [mapStyle, setMapStyle] = useState<MapStyleId>(() => getStoredMapStyle());
+  const { theme, setTheme } = useTheme();
+
+  const THEMES: { id: ThemeMode; label: string; description: string; icon: typeof Sun }[] = [
+    { id: 'system', label: 'Системна', description: 'Следва настройката на устройството', icon: Monitor },
+    { id: 'light', label: 'Светла', description: 'Винаги светъл интерфейс', icon: Sun },
+    { id: 'dark', label: 'Тъмна', description: 'Винаги тъмен интерфейс', icon: Moon },
+  ];
+
+  const handleThemeChange = (id: ThemeMode) => {
+    setTheme(id);
+    toast.success(`Темата е сменена на „${THEMES.find(t => t.id === id)?.label}“`);
+  };
 
   useHardwareBackButton();
 
