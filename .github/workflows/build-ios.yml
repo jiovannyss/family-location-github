@@ -136,9 +136,31 @@ jobs:
 
           echo "✅ Xcode / SDK изискването е изпълнено."
 
-          # Експортирай за следващите стъпки — ще ползваме точната SDK версия
-          # вместо общото 'iphoneos', за да избегнем 'platform not installed'.
           echo "IOS_SDK_VERSION=$IOS_SDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Ensure iOS platform is installed
+        run: |
+          set -e
+          # Проверяваме дали има реално инсталирана iOS device platform.
+          # 'Supported platforms ... is empty' означава, че SDK-то го има,
+          # но runtime/platform файловете липсват.
+          if xcodebuild -showdestinations -scheme App -project ios/App/App.xcodeproj 2>/dev/null \
+               | grep -q "platform:iOS,.*name:Any iOS Device"; then
+            echo "✅ iOS device platform вече е инсталирана."
+            exit 0
+          fi
+
+          echo "⚠️ iOS platform липсва — пробвам 'xcodebuild -downloadPlatform iOS'..."
+          if sudo xcodebuild -downloadPlatform iOS -buildVersion latest 2>&1 | tee /tmp/dl.log; then
+            echo "✅ iOS platform изтеглена."
+          else
+            echo "⚠️ -downloadPlatform fail-на, пробвам без -buildVersion..."
+            sudo xcodebuild -downloadPlatform iOS 2>&1 | tee -a /tmp/dl.log || true
+          fi
+
+          # Финална проверка
+          echo "📲 Налични destinations след инсталация:"
+          xcodebuild -showsdks 2>/dev/null | grep -i iphoneos || true
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
