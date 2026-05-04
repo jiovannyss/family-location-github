@@ -97,16 +97,31 @@ jobs:
 
       - name: Add iOS platform (if missing)
         run: |
-          if [ ! -d "ios" ]; then
+          # Ако няма пълен iOS native проект (липсва Podfile), пресъздай платформата.
+          if [ ! -f "ios/App/Podfile" ]; then
+            echo "ℹ️ ios/App/Podfile not found — (re)adding iOS platform."
+            rm -rf ios
             bunx cap add ios
+          else
+            echo "✅ iOS platform already present."
           fi
 
       - name: Sync Capacitor
         run: bunx cap sync ios
 
+      - name: Verify Podfile exists
+        run: |
+          if [ ! -f "ios/App/Podfile" ]; then
+            echo "❌ ios/App/Podfile still missing after cap add/sync."
+            ls -la ios || true
+            ls -la ios/App || true
+            exit 1
+          fi
+          echo "✅ Podfile found."
+
       - name: Install CocoaPods
         working-directory: ios/App
-        run: pod install
+        run: pod install --repo-update
 
       # ----- Signing material setup -----
       - name: Create temporary keychain & import certificate
