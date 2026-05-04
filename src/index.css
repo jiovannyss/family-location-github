@@ -237,9 +237,11 @@
   }
 }
 
-/* Leaflet map custom styles */
+/* Leaflet map custom styles.
+   Закръгляме самия leaflet контейнер, защото в някои браузъри tile-овете
+   (img елементи) "изтичат" над border-radius на родителя при overflow:hidden. */
 .leaflet-container {
-  @apply rounded-xl;
+  border-radius: inherit;
   font-family: inherit;
   z-index: 0;
 }
