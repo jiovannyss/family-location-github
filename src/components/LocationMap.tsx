@@ -256,11 +256,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
 
     const map = L.map(mapContainerRef.current, { zoomControl: true });
     const initialStyle = getMapStyleConfig(mapStyleId);
-    const tile = L.tileLayer(initialStyle.url, {
-      attribution: initialStyle.attribution,
-      maxZoom: initialStyle.maxZoom,
-      detectRetina: true,
-    }).addTo(map);
+    const tile = buildTileLayer(initialStyle).addTo(map);
     tileLayerRef.current = tile;
 
     map.setView(defaultCenter, 13);
