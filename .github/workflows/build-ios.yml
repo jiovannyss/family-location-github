@@ -287,7 +287,7 @@ jobs:
             echo "ℹ️ ASC key secret appears to be base64; decoded successfully."
           fi
 
-          python3 - <<'PY'
+          KEY_PATH="$KEY_PATH" python3 - <<'PY'
           from pathlib import Path
           import os, sys
 
@@ -478,6 +478,8 @@ jobs:
           security delete-keychain "$KEYCHAIN_PATH" || true
           rm -f "$PROFILE_PATH" || true
           rm -f "$CERT_PATH" || true
+          rm -f "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8" || true
+          rmdir "$HOME/private_keys" 2>/dev/null || true
           if [ -n "$PROFILE_UUID" ]; then
             rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision" || true
           fi
