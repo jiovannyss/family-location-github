@@ -134,10 +134,10 @@
 }
 
 @layer components {
-  /* Map container styles */
+  /* Map container styles. Закръгляне/border-ът се задават от родителя
+     (виж Index.tsx), за да не се получават двойни/застъпени ръбове в уеб. */
   .map-container {
-    @apply w-full h-full rounded-xl overflow-hidden;
-    box-shadow: var(--shadow-lg);
+    @apply w-full h-full overflow-hidden;
   }
 
   /* Location marker pulse animation */
@@ -237,9 +237,11 @@
   }
 }
 
-/* Leaflet map custom styles */
+/* Leaflet map custom styles.
+   Закръгляме самия leaflet контейнер, защото в някои браузъри tile-овете
+   (img елементи) "изтичат" над border-radius на родителя при overflow:hidden. */
 .leaflet-container {
-  @apply rounded-xl;
+  border-radius: inherit;
   font-family: inherit;
   z-index: 0;
 }
