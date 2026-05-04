@@ -177,6 +177,43 @@ export default function Settings() {
             </CardContent>
           </Card>
 
+          {/* Map style selector */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapIcon className="w-5 h-5" />
+                Стил на картата
+              </CardTitle>
+              <CardDescription>
+                Изберете визуален стил на картата
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {(Object.values(MAP_STYLES) as typeof MAP_STYLES[MapStyleId][]).map((style) => {
+                const selected = mapStyle === style.id;
+                return (
+                  <button
+                    key={style.id}
+                    type="button"
+                    onClick={() => handleMapStyleChange(style.id)}
+                    aria-pressed={selected}
+                    className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border text-left transition ${
+                      selected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border bg-secondary/40 hover:bg-secondary'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground">{style.name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{style.description}</p>
+                    </div>
+                    {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+
           <PushDiagnostics />
 
           {/* Legal links */}
