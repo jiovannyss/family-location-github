@@ -93,12 +93,28 @@ jobs:
         run: |
           set -e
 
-          XCODE_26_APP="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n1 || true)"
-          if [ -n "$XCODE_26_APP" ]; then
-            sudo xcode-select -s "$XCODE_26_APP/Contents/Developer"
-            echo "✅ Selected $(basename "$XCODE_26_APP")"
+          echo "📦 Налични Xcode инсталации:"
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+
+          # Предпочитаме СТАБИЛЕН Xcode 26 (без 'beta') — beta версиите често
+          # нямат инсталирана съответната iOS platform/runtime на runner-а,
+          # което води до 'iOS X.Y is not installed'.
+          XCODE_STABLE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -vi beta | sort -V | tail -n1 || true)"
+          XCODE_ANY26="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n1 || true)"
+
+          XCODE_APP=""
+          if [ -n "$XCODE_STABLE" ]; then
+            XCODE_APP="$XCODE_STABLE"
+          elif [ -n "$XCODE_ANY26" ]; then
+            XCODE_APP="$XCODE_ANY26"
+            echo "⚠️ Само beta Xcode 26 е наличен — възможни проблеми с липсваща platform."
+          fi
+
+          if [ -n "$XCODE_APP" ]; then
+            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+            echo "✅ Selected $(basename "$XCODE_APP")"
           else
-            echo "ℹ️ No explicit /Applications/Xcode_26*.app found; using runner default Xcode."
+            echo "ℹ️ Няма /Applications/Xcode_26*.app — ползвам default Xcode."
           fi
 
           XCODE_VERSION="$(xcodebuild -version | tr '\n' ' ' | sed 's/  */ /g')"
@@ -107,13 +123,22 @@ jobs:
           echo "🛠️ $XCODE_VERSION"
           echo "📱 iphoneos SDK: $IOS_SDK_VERSION"
 
+          # Покажи какви iOS runtime-и реално са инсталирани
+          echo "📲 Инсталирани iOS runtime-и / platforms:"
+          xcrun simctl list runtimes 2>/dev/null | grep -i ios || true
+          xcodebuild -showsdks 2>/dev/null | grep -i iphoneos || true
+
           SDK_MAJOR="${IOS_SDK_VERSION%%.*}"
           if [ "$SDK_MAJOR" -lt 26 ]; then
-            echo "❌ Runner is using iOS SDK $IOS_SDK_VERSION, but App Store now requires iOS 26 SDK or newer."
+            echo "❌ Runner ползва iOS SDK $IOS_SDK_VERSION, а App Store изисква iOS 26 SDK или по-нов."
             exit 1
           fi
 
-          echo "✅ Xcode / SDK requirement satisfied."
+          echo "✅ Xcode / SDK изискването е изпълнено."
+
+          # Експортирай за следващите стъпки — ще ползваме точната SDK версия
+          # вместо общото 'iphoneos', за да избегнем 'platform not installed'.
+          echo "IOS_SDK_VERSION=$IOS_SDK_VERSION" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
