@@ -201,6 +201,8 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layersRef = useRef<L.LayerGroup | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const [mapStyleId, setMapStyleId] = useState<MapStyleId>(() => getStoredMapStyle());
 
   const membersWithLocation = useMemo(
     () => members.filter((m) => m.last_location && m.sharing_state?.is_sharing),
