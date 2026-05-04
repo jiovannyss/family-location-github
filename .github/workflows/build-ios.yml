@@ -190,6 +190,63 @@ jobs:
       - name: Sync Capacitor
         run: bunx cap sync ios
 
+      - name: Generate iOS icons & splash from resources/
+        run: |
+          bunx @capacitor/assets generate \
+            --ios \
+            --iconBackgroundColor '#2A9D8F' \
+            --iconBackgroundColorDark '#2A9D8F' \
+            --assetPath resources
+
+      - name: Patch Info.plist with location & background usage descriptions
+        run: |
+          set -e
+          PLIST="ios/App/App/Info.plist"
+          PB=/usr/libexec/PlistBuddy
+
+          set_str() {
+            local key="$1"; local val="$2"
+            $PB -c "Set :$key $val" "$PLIST" 2>/dev/null || \
+              $PB -c "Add :$key string $val" "$PLIST"
+          }
+
+          set_str NSLocationWhenInUseUsageDescription "Семейна локация използва местоположението ви, за да го споделя с членовете на вашите кръгове, докато приложението е отворено."
+          set_str NSLocationAlwaysAndWhenInUseUsageDescription "За да виждат близките ви къде сте в реално време (включително когато приложението е затворено), е нужен достъп „Винаги\". Можете да го изключите по всяко време от Настройки."
+          set_str NSLocationAlwaysUsageDescription "Споделяне на местоположение с членовете на вашите кръгове, дори когато приложението работи на заден план."
+          set_str NSUserNotificationsUsageDescription "Получавайте съобщения от членовете на кръга си и важни известия за местоположение."
+
+          # UIBackgroundModes array (location, fetch, remote-notification)
+          $PB -c "Delete :UIBackgroundModes" "$PLIST" 2>/dev/null || true
+          $PB -c "Add :UIBackgroundModes array" "$PLIST"
+          $PB -c "Add :UIBackgroundModes:0 string location" "$PLIST"
+          $PB -c "Add :UIBackgroundModes:1 string fetch" "$PLIST"
+          $PB -c "Add :UIBackgroundModes:2 string remote-notification" "$PLIST"
+
+          echo "✅ Info.plist patched."
+          $PB -c "Print" "$PLIST" | grep -E "Location|Background|Notifications" || true
+
+      - name: Patch App.entitlements (Push + APS environment)
+        run: |
+          set -e
+          ENT="ios/App/App/App.entitlements"
+          if [ ! -f "$ENT" ]; then
+            cat > "$ENT" <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>aps-environment</key>
+            <string>production</string>
+          </dict>
+          </plist>
+          EOF
+          else
+            /usr/libexec/PlistBuddy -c "Set :aps-environment production" "$ENT" 2>/dev/null || \
+              /usr/libexec/PlistBuddy -c "Add :aps-environment string production" "$ENT"
+          fi
+          echo "✅ App.entitlements ready."
+          cat "$ENT"
+
       - name: Detect dependency manager (CocoaPods vs SPM)
         id: deps
         run: |
