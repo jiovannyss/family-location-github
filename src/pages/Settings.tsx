@@ -1,17 +1,30 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Map as MapIcon, Check } from 'lucide-react';
+import { ArrowLeft, Map as MapIcon, Check, Palette, Sun, Moon, Monitor } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import Header from '@/components/Header';
 import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
+import { useTheme, ThemeMode } from '@/hooks/useTheme';
 import { MAP_STYLES, MapStyleId, getStoredMapStyle, setStoredMapStyle } from '@/lib/mapStyle';
 
 export default function Settings() {
   const navigate = useNavigate();
   const [mapStyle, setMapStyle] = useState<MapStyleId>(() => getStoredMapStyle());
+  const { theme, setTheme } = useTheme();
+
+  const THEMES: { id: ThemeMode; label: string; description: string; icon: typeof Sun }[] = [
+    { id: 'system', label: 'Системна', description: 'Следва настройката на устройството', icon: Monitor },
+    { id: 'light', label: 'Светла', description: 'Винаги светъл интерфейс', icon: Sun },
+    { id: 'dark', label: 'Тъмна', description: 'Винаги тъмен интерфейс', icon: Moon },
+  ];
+
+  const handleThemeChange = (id: ThemeMode) => {
+    setTheme(id);
+    toast.success(`Темата е сменена на „${THEMES.find(t => t.id === id)?.label}“`);
+  };
 
   useHardwareBackButton();
 
@@ -38,6 +51,46 @@ export default function Settings() {
             </Button>
             <h1 className="text-2xl font-bold text-foreground">Настройки</h1>
           </div>
+
+          {/* Theme selector */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="w-5 h-5" />
+                Тема
+              </CardTitle>
+              <CardDescription>
+                Изберете светъл, тъмен или системен режим
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {THEMES.map(({ id, label, description, icon: Icon }) => {
+                const selected = theme === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => handleThemeChange(id)}
+                    aria-pressed={selected}
+                    className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border text-left transition ${
+                      selected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border bg-secondary/40 hover:bg-secondary'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Icon className="w-5 h-5 shrink-0 text-foreground" />
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground">{label}</p>
+                        <p className="text-xs text-muted-foreground truncate">{description}</p>
+                      </div>
+                    </div>
+                    {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
 
           {/* Map style selector */}
           <Card>
