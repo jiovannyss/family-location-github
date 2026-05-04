@@ -126,11 +126,16 @@ jobs:
         if: steps.deps.outputs.manager == 'cocoapods'
         working-directory: ios/App
         run: |
-          if ! grep -q "LOVABLE_DISABLE_PODS_SIGNING" Podfile; then
-            cat >> Podfile <<'RUBY'
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
 
-          # LOVABLE_DISABLE_PODS_SIGNING
-          post_install do |installer|
+          podfile = Path("Podfile")
+          text = podfile.read_text()
+
+          marker = "# LOVABLE_DISABLE_PODS_SIGNING"
+          injection = """
+            # LOVABLE_DISABLE_PODS_SIGNING
             installer.pods_project.targets.each do |target|
               target.build_configurations.each do |config|
                 config.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
@@ -142,12 +147,23 @@ jobs:
                 config.build_settings.delete('DEVELOPMENT_TEAM')
               end
             end
-          end
-          RUBY
-            echo "✅ Podfile patched."
-          else
-            echo "ℹ️ Podfile already patched."
-          fi
+          """.strip("\n")
+
+          if marker in text:
+              print("ℹ️ Podfile already patched.")
+              raise SystemExit(0)
+
+          match = re.search(r"^post_install do \|installer\|\s*$", text, flags=re.MULTILINE)
+          if match:
+              insert_at = match.end()
+              text = text[:insert_at] + "\n" + injection + text[insert_at:]
+          else:
+              text = text.rstrip() + "\n\npost_install do |installer|\n" + injection + "\nend\n"
+
+          podfile.write_text(text)
+          print("✅ Podfile patched.")
+          PY
+          sed -n '/post_install do |installer|/,+20p' Podfile
 
       - name: Install CocoaPods (only if Podfile exists)
         if: steps.deps.outputs.manager == 'cocoapods'
