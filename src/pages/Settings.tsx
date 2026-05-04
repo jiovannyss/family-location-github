@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, User, Trash2, Loader2, Save, Shield, FileText } from 'lucide-react';
+import { ArrowLeft, User, Trash2, Loader2, Save, Shield, FileText, Info } from 'lucide-react';
+import { getAppVersionInfo, APP_VERSION, type AppVersionInfo } from '@/lib/version';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
