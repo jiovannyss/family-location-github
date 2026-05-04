@@ -217,6 +217,30 @@ export default function Auth() {
                 {errors.password && (
                   <p className="text-sm text-destructive">{errors.password}</p>
                 )}
+                {isLogin && (
+                  <div className="text-right">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!email || !z.string().email().safeParse(email).success) {
+                          toast.error('Въведете валиден имейл за изпращане на линк');
+                          return;
+                        }
+                        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                          redirectTo: `${window.location.origin}/reset-password`,
+                        });
+                        if (error) {
+                          toast.error(error.message);
+                        } else {
+                          toast.success('Изпратихме ви имейл с линк за смяна на паролата');
+                        }
+                      }}
+                      className="text-xs text-muted-foreground hover:text-primary"
+                    >
+                      Забравена парола?
+                    </button>
+                  </div>
+                )}
               </div>
 
               {!isLogin && (
