@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { AppBadgeSync } from "@/components/AppBadgeSync";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import ResetPassword from "./pages/ResetPassword";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import PushDiagnosticsPage from "./pages/PushDiagnosticsPage";
