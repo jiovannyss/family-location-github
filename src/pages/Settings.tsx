@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, User, Trash2, Loader2, Save, Shield, FileText, Info } from 'lucide-react';
+import { ArrowLeft, User, Trash2, Loader2, Save, Shield, FileText, Info, Map as MapIcon, Check } from 'lucide-react';
+import { MAP_STYLES, MapStyleId, getStoredMapStyle, setStoredMapStyle } from '@/lib/mapStyle';
 import { getAppVersionInfo, APP_VERSION, type AppVersionInfo } from '@/lib/version';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
