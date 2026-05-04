@@ -1,20 +1,83 @@
 name: Build iOS (manual)
 
-# Ръчен билд на iOS приложението. Изисква macOS runner (по-бавно/по-скъпо от Android).
-# Производство в App Store изисква Apple Developer акаунт + подпис с certificate &
-# provisioning profile (които се качват като GitHub secrets — виж README).
+# End-to-end iOS билд от GitHub Actions macOS runner — НЕ изисква локален Mac.
 #
-# Този workflow прави unsigned archive за тестване на симулатор. Без сертификати
-# реален device билд НЕ може да се направи в CI.
+# Режими (workflow_dispatch input `build_type`):
+#   validate    → signed archive + .ipa, качва се като GitHub artifact (без TestFlight upload)
+#   testflight  → същото + upload към App Store Connect / TestFlight
+#
+# Всички certificates / profiles / API keys идват САМО от GitHub Secrets.
+# Никой чувствителен файл не се commit-ва в repo-то.
+#
+# Изисквани GitHub Secrets (виж resources/IOS_CI_SETUP.md):
+#   IOS_DIST_CERTIFICATE_P12_BASE64
+#   IOS_DIST_CERTIFICATE_PASSWORD
+#   IOS_PROVISIONING_PROFILE_BASE64
+#   IOS_KEYCHAIN_PASSWORD
+#   APP_STORE_CONNECT_API_KEY_P8_BASE64
+#   APP_STORE_CONNECT_API_KEY_ID
+#   APP_STORE_CONNECT_API_ISSUER_ID
+#   IOS_TEAM_ID
+#   IOS_BUNDLE_ID
 
 on:
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Тип билд'
+        required: true
+        default: 'validate'
+        type: choice
+        options:
+          - validate
+          - testflight
 
 jobs:
   ios:
     runs-on: macos-14
+
+    env:
+      IOS_DIST_CERTIFICATE_P12_BASE64:    ${{ secrets.IOS_DIST_CERTIFICATE_P12_BASE64 }}
+      IOS_DIST_CERTIFICATE_PASSWORD:      ${{ secrets.IOS_DIST_CERTIFICATE_PASSWORD }}
+      IOS_PROVISIONING_PROFILE_BASE64:    ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+      IOS_KEYCHAIN_PASSWORD:              ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+      APP_STORE_CONNECT_API_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8_BASE64 }}
+      APP_STORE_CONNECT_API_KEY_ID:       ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+      APP_STORE_CONNECT_API_ISSUER_ID:    ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+      IOS_TEAM_ID:                        ${{ secrets.IOS_TEAM_ID }}
+      IOS_BUNDLE_ID:                      ${{ secrets.IOS_BUNDLE_ID }}
+
+      KEYCHAIN_PATH: ${{ github.workspace }}/build.keychain-db
+      PROFILE_PATH:  ${{ github.workspace }}/profile.mobileprovision
+      CERT_PATH:     ${{ github.workspace }}/dist_cert.p12
+      ASC_KEY_DIR:   ${{ github.workspace }}/private_keys
+      ARCHIVE_PATH:  ${{ github.workspace }}/build/App.xcarchive
+      EXPORT_DIR:    ${{ github.workspace }}/build/export
+      EXPORT_OPTS:   ${{ github.workspace }}/build/ExportOptions.plist
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for v in \
+            IOS_DIST_CERTIFICATE_P12_BASE64 \
+            IOS_DIST_CERTIFICATE_PASSWORD \
+            IOS_PROVISIONING_PROFILE_BASE64 \
+            IOS_KEYCHAIN_PASSWORD \
+            APP_STORE_CONNECT_API_KEY_P8_BASE64 \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            IOS_TEAM_ID \
+            IOS_BUNDLE_ID; do
+            if [ -z "${!v}" ]; then
+              echo "❌ Missing GitHub Secret: $v"
+              missing=1
+            fi
+          done
+          if [ "$missing" = "1" ]; then exit 1; fi
+          echo "✅ All required secrets present."
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -45,21 +108,199 @@ jobs:
         working-directory: ios/App
         run: pod install
 
-      - name: Build for simulator (unsigned)
+      # ----- Signing material setup -----
+      - name: Create temporary keychain & import certificate
+        run: |
+          set +x
+          # Decode .p12
+          echo "$IOS_DIST_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          # Create temporary keychain
+          security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Add to search list (запазваме existing keychains)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+          # Import certificate
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$IOS_DIST_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          # Allow codesign да чете ключа без UI prompt
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$IOS_KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH" >/dev/null
+
+          # Изтрий .p12 от диска
+          rm -f "$CERT_PATH"
+
+          echo "✅ Keychain ready."
+
+      - name: Install provisioning profile
+        run: |
+          set +x
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+
+          # Извлечи UUID и копирай под правилното име
+          UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" \
+            /dev/stdin <<< "$(security cms -D -i "$PROFILE_PATH")")
+          if [ -z "$UUID" ]; then
+            echo "❌ Could not extract UUID from provisioning profile."
+            exit 1
+          fi
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$UUID.mobileprovision"
+          echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+          echo "✅ Provisioning profile installed (UUID=$UUID)."
+
+      - name: Install App Store Connect API key
+        run: |
+          set +x
+          mkdir -p "$ASC_KEY_DIR"
+          echo "$APP_STORE_CONNECT_API_KEY_P8_BASE64" | base64 --decode \
+            > "$ASC_KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          chmod 600 "$ASC_KEY_DIR/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          echo "✅ ASC API key in place."
+
+      # ----- Set app version -----
+      - name: Set app version (CFBundleVersion / CFBundleShortVersionString)
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          PLIST="ios/App/App/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${RUN_NUMBER}" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${RUN_NUMBER}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0.${RUN_NUMBER}" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.0.${RUN_NUMBER}" "$PLIST"
+          echo "📱 CFBundleVersion=${RUN_NUMBER}, CFBundleShortVersionString=1.0.${RUN_NUMBER}"
+
+      # ----- Generate ExportOptions.plist -----
+      - name: Generate ExportOptions.plist
+        run: |
+          mkdir -p "$(dirname "$EXPORT_OPTS")"
+          cat > "$EXPORT_OPTS" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>teamID</key>
+            <string>${IOS_TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>stripSwiftSymbols</key>
+            <true/>
+            <key>uploadBitcode</key>
+            <false/>
+            <key>uploadSymbols</key>
+            <true/>
+            <key>destination</key>
+            <string>export</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>${IOS_BUNDLE_ID}</key>
+              <string>${PROFILE_UUID}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+          echo "✅ ExportOptions.plist created."
+
+      # ----- Archive -----
+      - name: xcodebuild archive (device)
         working-directory: ios/App
         run: |
           xcodebuild \
             -workspace App.xcworkspace \
             -scheme App \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE_ID" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH" \
+            archive
 
-      - name: Upload .app bundle
+      # ----- Export .ipa -----
+      - name: xcodebuild -exportArchive
+        run: |
+          xcodebuild \
+            -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTS" \
+            -exportPath "$EXPORT_DIR" \
+            -allowProvisioningUpdates \
+            OTHER_CODE_SIGN_FLAGS="--keychain $KEYCHAIN_PATH"
+
+      - name: Locate .ipa
+        id: ipa
+        run: |
+          IPA=$(ls "$EXPORT_DIR"/*.ipa | head -n1)
+          if [ -z "$IPA" ]; then
+            echo "❌ No .ipa produced."
+            exit 1
+          fi
+          echo "ipa_path=$IPA" >> "$GITHUB_OUTPUT"
+          echo "📦 IPA: $IPA"
+
+      - name: Upload .ipa as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: family-location-ios-simulator
-          path: ios/App/build/Build/Products/Debug-iphonesimulator/App.app
+          name: family-location-ios-${{ inputs.build_type }}-1.0.${{ github.run_number }}
+          path: ${{ steps.ipa.outputs.ipa_path }}
           if-no-files-found: error
+
+      # ----- Validate срещу App Store (винаги, безопасно) -----
+      - name: Validate .ipa against App Store
+        if: ${{ inputs.build_type == 'validate' || inputs.build_type == 'testflight' }}
+        env:
+          IPA_PATH: ${{ steps.ipa.outputs.ipa_path }}
+        run: |
+          set +x
+          xcrun altool --validate-app \
+            -f "$IPA_PATH" \
+            -t ios \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+        env:
+          # altool чете .p8 от ./private_keys или ~/private_keys
+          API_PRIVATE_KEYS_DIR: ${{ env.ASC_KEY_DIR }}
+
+      # ----- TestFlight upload (само при testflight) -----
+      - name: Upload to TestFlight
+        if: ${{ inputs.build_type == 'testflight' }}
+        env:
+          IPA_PATH: ${{ steps.ipa.outputs.ipa_path }}
+          API_PRIVATE_KEYS_DIR: ${{ env.ASC_KEY_DIR }}
+        run: |
+          set +x
+          xcrun altool --upload-app \
+            -f "$IPA_PATH" \
+            -t ios \
+            --apiKey "$APP_STORE_CONNECT_API_KEY_ID" \
+            --apiIssuer "$APP_STORE_CONNECT_API_ISSUER_ID"
+          echo "🚀 Uploaded to TestFlight."
+
+      # ----- Cleanup -----
+      - name: Cleanup signing material
+        if: always()
+        run: |
+          set +x
+          security delete-keychain "$KEYCHAIN_PATH" || true
+          rm -f "$PROFILE_PATH" || true
+          rm -f "$CERT_PATH" || true
+          if [ -n "$PROFILE_UUID" ]; then
+            rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision" || true
+          fi
+          rm -rf "$ASC_KEY_DIR" || true
+          echo "🧹 Cleanup done."
