@@ -66,7 +66,7 @@ export default function SharingToggle() {
 
   return (
     <>
-    <Card className={`transition-all duration-300 ${isSharing ? 'ring-2 ring-primary shadow-glow' : ''}`}>
+    <Card className={`transition-all duration-300 ${isSharing ? 'border-primary/40 shadow-sm' : ''}`}>
       <CardContent className="p-3 sm:p-4">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">
