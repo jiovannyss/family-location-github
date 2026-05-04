@@ -297,7 +297,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<MapStyleId>).detail;
-      if (detail === 'voyager' || detail === 'positron') {
+      if (detail && detail in MAP_STYLES) {
         setMapStyleId(detail);
       }
     };
@@ -320,11 +320,7 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current);
     }
-    tileLayerRef.current = L.tileLayer(cfg.url, {
-      attribution: cfg.attribution,
-      maxZoom: cfg.maxZoom,
-      detectRetina: true,
-    }).addTo(map);
+    tileLayerRef.current = buildTileLayer(cfg).addTo(map);
   }, [mapStyleId]);
 
   useEffect(() => {
