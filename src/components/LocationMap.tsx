@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MemberWithLocation } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { bg } from 'date-fns/locale';
+import { getMapStyleConfig, getStoredMapStyle, MapStyleId } from '@/lib/mapStyle';
 
 interface LocationMapProps {
   members: MemberWithLocation[];
@@ -200,6 +201,8 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layersRef = useRef<L.LayerGroup | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
+  const [mapStyleId, setMapStyleId] = useState<MapStyleId>(() => getStoredMapStyle());
 
   const membersWithLocation = useMemo(
     () => members.filter((m) => m.last_location && m.sharing_state?.is_sharing),
@@ -240,9 +243,13 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     if (!mapContainerRef.current || mapRef.current) return;
 
     const map = L.map(mapContainerRef.current, { zoomControl: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    const initialStyle = getMapStyleConfig(mapStyleId);
+    const tile = L.tileLayer(initialStyle.url, {
+      attribution: initialStyle.attribution,
+      maxZoom: initialStyle.maxZoom,
+      detectRetina: true,
     }).addTo(map);
+    tileLayerRef.current = tile;
 
     map.setView(defaultCenter, 13);
     mapRef.current = map;
@@ -277,6 +284,40 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
       layersRef.current = null;
     };
   }, []);
+
+  // Слушай за смяна на стила (от Settings) и я приложи на live картата
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<MapStyleId>).detail;
+      if (detail === 'voyager' || detail === 'positron') {
+        setMapStyleId(detail);
+      }
+    };
+    window.addEventListener('mapstyle:change', handler);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'mapStyle') setMapStyleId(getStoredMapStyle());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('mapstyle:change', handler);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // Прилагай tile layer-а при смяна на стила
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const cfg = getMapStyleConfig(mapStyleId);
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+    tileLayerRef.current = L.tileLayer(cfg.url, {
+      attribution: cfg.attribution,
+      maxZoom: cfg.maxZoom,
+      detectRetina: true,
+    }).addTo(map);
+  }, [mapStyleId]);
 
   useEffect(() => {
     const map = mapRef.current;
