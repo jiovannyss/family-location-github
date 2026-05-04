@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { MapPin, Settings, LogOut, Loader2 } from 'lucide-react';
+import { MapPin, Settings, LogOut, Loader2, User, Bell, FileText, Shield, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
@@ -80,9 +80,29 @@ export default function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate('/profile')}>
+              <User className="w-4 h-4 mr-2" />
+              Профил
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate('/settings')}>
               <Settings className="w-4 h-4 mr-2" />
               Настройки
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/push-diagnostics')}>
+              <Bell className="w-4 h-4 mr-2" />
+              Push диагностика
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/documents')}>
+              <FileText className="w-4 h-4 mr-2" />
+              Документи
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/privacy-data')}>
+              <Shield className="w-4 h-4 mr-2" />
+              Поверителност и данни
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/about')}>
+              <Info className="w-4 h-4 mr-2" />
+              За приложението
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">

@@ -5,6 +5,7 @@ import { MemberWithLocation } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { bg } from 'date-fns/locale';
 import { getMapStyleConfig, getStoredMapStyle, MAP_STYLES, MapStyleId, MapStyleConfig } from '@/lib/mapStyle';
+import MapStyleButton from './MapStyleButton';
 
 function buildTileLayer(cfg: MapStyleConfig): L.TileLayer {
   const opts: L.TileLayerOptions = {
@@ -435,8 +436,9 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
   }, [membersWithLocation, selectedMember]);
 
   return (
-    <div className="map-container h-full min-h-[400px]">
+    <div className="map-container h-full min-h-[400px] relative">
       <div ref={mapContainerRef} className="w-full h-full" />
+      <MapStyleButton />
     </div>
   );
 }
