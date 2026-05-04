@@ -11,6 +11,20 @@ import {
 import { notifications } from '@/services/notifications';
 import { getQuestionByCode } from '@/lib/quickMessages';
 
+// Глобална деупликация: useMessages се ползва на няколко места едновременно
+// (AppBadgeSync, MessagesInbox, ChatDialog, Index...). Без този set всяко
+// едно копие на хука би показало собствен toast/нотификация при INSERT,
+// което води до 3+ дублирани „Ново съобщение" балончета.
+const notifiedMessageIds = new Set<string>();
+function markNotified(id: string) {
+  notifiedMessageIds.add(id);
+  // Малко housekeeping: не държим безкрайно много id-та в паметта.
+  if (notifiedMessageIds.size > 500) {
+    const first = notifiedMessageIds.values().next().value;
+    if (first) notifiedMessageIds.delete(first);
+  }
+}
+
 export function useMessages() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
