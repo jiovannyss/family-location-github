@@ -263,7 +263,7 @@ jobs:
       # ----- Validate срещу App Store (винаги, безопасно) -----
       - name: Validate .ipa against App Store
         if: ${{ inputs.build_type == 'validate' || inputs.build_type == 'testflight' }}
-         env:
+        env:
           IPA_PATH: ${{ steps.ipa.outputs.ipa_path }}
           # altool чете .p8 от ./private_keys или ~/private_keys
           API_PRIVATE_KEYS_DIR: ${{ env.ASC_KEY_DIR }}
