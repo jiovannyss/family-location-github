@@ -4,7 +4,19 @@ import 'leaflet/dist/leaflet.css';
 import { MemberWithLocation } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 import { bg } from 'date-fns/locale';
-import { getMapStyleConfig, getStoredMapStyle, MapStyleId } from '@/lib/mapStyle';
+import { getMapStyleConfig, getStoredMapStyle, MAP_STYLES, MapStyleId, MapStyleConfig } from '@/lib/mapStyle';
+
+function buildTileLayer(cfg: MapStyleConfig): L.TileLayer {
+  const opts: L.TileLayerOptions = {
+    attribution: cfg.attribution,
+    maxZoom: cfg.maxZoom,
+    detectRetina: true,
+  };
+  if (cfg.subdomains !== undefined) {
+    opts.subdomains = cfg.subdomains;
+  }
+  return L.tileLayer(cfg.url, opts);
+}
 
 interface LocationMapProps {
   members: MemberWithLocation[];
