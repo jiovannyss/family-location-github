@@ -243,9 +243,13 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     if (!mapContainerRef.current || mapRef.current) return;
 
     const map = L.map(mapContainerRef.current, { zoomControl: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    const initialStyle = getMapStyleConfig(mapStyleId);
+    const tile = L.tileLayer(initialStyle.url, {
+      attribution: initialStyle.attribution,
+      maxZoom: initialStyle.maxZoom,
+      detectRetina: true,
     }).addTo(map);
+    tileLayerRef.current = tile;
 
     map.setView(defaultCenter, 13);
     mapRef.current = map;
