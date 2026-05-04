@@ -285,6 +285,40 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
     };
   }, []);
 
+  // Слушай за смяна на стила (от Settings) и я приложи на live картата
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<MapStyleId>).detail;
+      if (detail === 'voyager' || detail === 'positron') {
+        setMapStyleId(detail);
+      }
+    };
+    window.addEventListener('mapstyle:change', handler);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'mapStyle') setMapStyleId(getStoredMapStyle());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('mapstyle:change', handler);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // Прилагай tile layer-а при смяна на стила
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const cfg = getMapStyleConfig(mapStyleId);
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+    tileLayerRef.current = L.tileLayer(cfg.url, {
+      attribution: cfg.attribution,
+      maxZoom: cfg.maxZoom,
+      detectRetina: true,
+    }).addTo(map);
+  }, [mapStyleId]);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
