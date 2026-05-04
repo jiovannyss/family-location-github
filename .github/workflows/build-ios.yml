@@ -138,28 +138,38 @@ jobs:
 
           echo "IOS_SDK_VERSION=$IOS_SDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Ensure iOS platform is installed
+      - name: Ensure iOS device platform is installed
         run: |
           set -e
-          # Проверяваме дали има реално инсталирана iOS device platform.
-          # 'Supported platforms ... is empty' означава, че SDK-то го има,
-          # но runtime/platform файловете липсват.
-          if xcodebuild -showdestinations -scheme App -project ios/App/App.xcodeproj 2>/dev/null \
-               | grep -q "platform:iOS,.*name:Any iOS Device"; then
-            echo "✅ iOS device platform вече е инсталирана."
-            exit 0
+          # Проверка: 'xcodebuild -showsdks' може да върне SDK-то като инсталирано,
+          # но истинският тест е дали 'simctl list runtimes' / DVTDownloadableIndex
+          # съдържат iOS device platform. На beta Xcode runner-и платформата често
+          # липсва → 'iOS X.Y is not installed'.
+          PLATFORM_DIR="$(xcrun --sdk iphoneos --show-sdk-platform-path 2>/dev/null || true)"
+          echo "📁 Platform dir: $PLATFORM_DIR"
+
+          NEEDS_DOWNLOAD=0
+          if [ -z "$PLATFORM_DIR" ] || [ ! -d "$PLATFORM_DIR/Developer/Library/CoreDevice" ]; then
+            NEEDS_DOWNLOAD=1
           fi
 
-          echo "⚠️ iOS platform липсва — пробвам 'xcodebuild -downloadPlatform iOS'..."
-          if sudo xcodebuild -downloadPlatform iOS -buildVersion latest 2>&1 | tee /tmp/dl.log; then
-            echo "✅ iOS platform изтеглена."
+          # Допълнителна евристика: SDK-то съществува ли изобщо?
+          if ! xcodebuild -showsdks 2>/dev/null | grep -qi "iphoneos"; then
+            NEEDS_DOWNLOAD=1
+          fi
+
+          if [ "$NEEDS_DOWNLOAD" = "0" ]; then
+            echo "✅ iOS device platform изглежда инсталирана."
           else
-            echo "⚠️ -downloadPlatform fail-на, пробвам без -buildVersion..."
-            sudo xcodebuild -downloadPlatform iOS 2>&1 | tee -a /tmp/dl.log || true
+            echo "⚠️ iOS platform липсва — изтеглям с 'xcodebuild -downloadPlatform iOS'..."
+            sudo xcodebuild -downloadPlatform iOS 2>&1 | tail -n 50 || {
+              echo "❌ -downloadPlatform fail-на."
+              exit 1
+            }
+            echo "✅ iOS platform изтеглена."
           fi
 
-          # Финална проверка
-          echo "📲 Налични destinations след инсталация:"
+          echo "📲 SDK-та след проверка:"
           xcodebuild -showsdks 2>/dev/null | grep -i iphoneos || true
 
       - name: Install dependencies
