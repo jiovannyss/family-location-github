@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, User, Trash2, Loader2, Save, Shield, FileText } from 'lucide-react';
+import { ArrowLeft, User, Trash2, Loader2, Save, Shield, FileText, Info } from 'lucide-react';
+import { getAppVersionInfo, APP_VERSION, type AppVersionInfo } from '@/lib/version';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -36,6 +37,11 @@ export default function Settings() {
   const [displayName, setDisplayName] = useState(profile?.display_name || '');
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
+  const [versionInfo, setVersionInfo] = useState<AppVersionInfo>({ version: APP_VERSION });
+
+  useEffect(() => {
+    getAppVersionInfo().then(setVersionInfo).catch(() => { /* ignore */ });
+  }, []);
 
   useHardwareBackButton();
 
@@ -274,6 +280,31 @@ export default function Settings() {
                   </AlertDialogContent>
                 </AlertDialog>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* App version */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="w-5 h-5" />
+                За приложението
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Версия</span>
+                <span className="font-mono font-medium">
+                  {versionInfo.nativeVersion ?? versionInfo.version}
+                  {versionInfo.nativeBuild ? ` (${versionInfo.nativeBuild})` : ''}
+                </span>
+              </div>
+              {versionInfo.nativeVersion && versionInfo.nativeVersion !== versionInfo.version && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted-foreground">Web версия</span>
+                  <span className="font-mono">{versionInfo.version}</span>
+                </div>
+              )}
             </CardContent>
           </Card>
         </motion.div>
