@@ -15,6 +15,35 @@ import { supabase } from '@/integrations/supabase/client';
 import { isNative, nativePlatform } from './platform';
 import { getDeviceIdAsync } from './deviceId';
 import { notifications } from './notifications';
+import { geolocation } from './geolocation';
+import { uploadLocationPoint } from './locationUpload';
+import { getDeviceId } from './deviceId';
+import { getDeviceInfo } from './device';
+
+/**
+ * Извикан когато получим silent push с type=location_refresh.
+ * Взема свежа локация и я качва — без да показва UI.
+ */
+async function handleLocationRefreshPush() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id;
+    if (!uid) return;
+    const coords = await geolocation.getCurrentPosition();
+    await uploadLocationPoint({
+      userId: uid,
+      deviceId: getDeviceId(),
+      lat: coords.lat,
+      lng: coords.lng,
+      accuracy: coords.accuracy,
+      recordedAt: new Date().toISOString(),
+      devicePlatform: getDeviceInfo().platform,
+    });
+    console.log('[push] location_refresh: uploaded fresh location');
+  } catch (e) {
+    console.warn('[push] location_refresh failed', e);
+  }
+}
 
 // Push е OPT-IN: на Android `PushNotifications.register()` хвърля native
 // Java exception, ако липсва `google-services.json` (FCM config). Този crash
@@ -250,16 +279,31 @@ class NativePushService implements PushService {
       });
       await Push.addListener('pushNotificationReceived', (notification) => {
         console.log('[push] notification received in foreground', notification);
+        // Silent location refresh push: data-only, събужда устройството за да
+        // прати свежи координати без UI на потребителя.
+        const data = notification.data || {};
+        if (data.type === 'location_refresh') {
+          void handleLocationRefreshPush();
+          return;
+        }
         void notifications.notify({
           title: notification.title || 'Ново съобщение',
           body: notification.body,
         });
         // Ако payload-ът носи unread_count → синхронизирай badge-а веднага,
         // за да не чакаме realtime + useMessages да обновят бройката.
-        const raw = notification.data?.unread_count;
+        const raw = data.unread_count;
         const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
         if (Number.isFinite(n) && n >= 0) {
           void import('./appBadge').then(({ setAppBadge }) => setAppBadge(n)).catch(() => {});
+        }
+      });
+      // pushNotificationActionPerformed → когато iOS събуди приложението от
+      // silent push, понякога идва тук вместо в foreground listener-а.
+      await Push.addListener('pushNotificationActionPerformed', (action) => {
+        const data = action?.notification?.data || {};
+        if (data.type === 'location_refresh') {
+          void handleLocationRefreshPush();
         }
       });
     } catch (e) {
