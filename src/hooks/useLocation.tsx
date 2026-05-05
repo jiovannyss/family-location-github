@@ -9,6 +9,7 @@ import { getDeviceInfo } from '@/services/device';
 import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
 import { uploadLocationPoint } from '@/services/locationUpload';
 import { App as CapacitorApp } from '@capacitor/app';
+import { isNative } from '@/services/platform';
 
 export function useSharingState() {
   const { user } = useAuth();
