@@ -182,9 +182,6 @@ Deno.serve(async (req) => {
           headers: {
             'apns-push-type': 'background',
             'apns-priority': '5',
-            'apns-topic': sa.client_email?.includes('iam.gserviceaccount.com')
-              ? undefined as any
-              : undefined,
           },
           payload: {
             aps: {
