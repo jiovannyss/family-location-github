@@ -44,7 +44,7 @@ export default function PushDiagnostics() {
   const load = async () => {
     setLoading(true);
     try {
-      const pushEnabled = import.meta.env.VITE_ENABLE_PUSH === 'true';
+      const pushEnabled = import.meta.env.VITE_ENABLE_PUSH === 'true' || nativePlatform() === 'ios';
       const deviceId = await getDeviceIdAsync();
       let permission = 'n/a';
       if (isNative() && pushEnabled) {

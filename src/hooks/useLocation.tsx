@@ -7,6 +7,9 @@ import { getDeviceId } from '@/services/deviceId';
 import { geolocation, type Coords } from '@/services/geolocation';
 import { getDeviceInfo } from '@/services/device';
 import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
+import { uploadLocationPoint } from '@/services/locationUpload';
+import { App as CapacitorApp } from '@capacitor/app';
+import { isNative } from '@/services/platform';
 
 export function useSharingState() {
   const { user } = useAuth();
@@ -97,6 +100,40 @@ export function useLocationTracking() {
   }, []);
 
   useEffect(() => {
+    if (!isNative()) return;
+
+    let disposed = false;
+    let handle: { remove: () => Promise<void> } | null = null;
+
+    void CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (disposed || !isActive || !isSharing) return;
+      void geolocation.checkPermission().then((p) => {
+        if (!disposed) setPermissionState(p.state);
+      });
+      void geolocation.getCurrentPosition()
+        .then((coords) => {
+          if (disposed) return;
+          setCurrentPosition(coords);
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          if (!disposed) {
+            setError(err instanceof Error ? err.message : 'Location error');
+          }
+        });
+    }).then((h) => {
+      handle = h;
+    }).catch(() => {
+      /* ignore on unsupported environments */
+    });
+
+    return () => {
+      disposed = true;
+      if (handle) void handle.remove();
+    };
+  }, [isSharing]);
+
+  useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -117,16 +154,19 @@ export function useLocationTracking() {
     const sendPos = async (coords: Coords) => {
       const uid = userIdRef.current;
       if (!uid || cancelled) return;
-      const { error: err } = await supabase.from('location_points').insert({
-        user_id: uid,
-        device_id: deviceId,
-        lat: coords.lat,
-        lng: coords.lng,
-        accuracy_m: coords.accuracy,
-        recorded_at: new Date().toISOString(),
-        device_platform: platform,
-      });
-      if (err) console.error('Failed to send location:', err);
+      try {
+        await uploadLocationPoint({
+          userId: uid,
+          deviceId,
+          lat: coords.lat,
+          lng: coords.lng,
+          accuracy: coords.accuracy,
+          recordedAt: new Date().toISOString(),
+          devicePlatform: platform,
+        });
+      } catch (err) {
+        console.error('Failed to send location:', err);
+      }
     };
 
     const doUpdate = async () => {

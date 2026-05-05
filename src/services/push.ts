@@ -21,7 +21,8 @@ import { notifications } from './notifications';
 // става в Java thread и НЕ може да се хване от JS try/catch → процесът умира.
 // Затова push се активира само когато явно подадеш VITE_ENABLE_PUSH=true
 // (след като добавиш google-services.json в android/app/).
-const PUSH_ENABLED = import.meta.env.VITE_ENABLE_PUSH === 'true';
+const PUSH_ENABLED =
+  import.meta.env.VITE_ENABLE_PUSH === 'true' || nativePlatform() === 'ios';
 const PUSH_DISABLED = !PUSH_ENABLED;
 
 // ---------- Live diagnostics (read by PushDiagnostics UI) ----------

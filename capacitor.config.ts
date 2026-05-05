@@ -24,12 +24,16 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: false,
+    useLegacyBridge: true,
     // Production: изключва Chrome DevTools достъп до WebView съдържанието на устройството.
     // Изисква се за store билдове (security best practice; Apple/Google изискват
     // приложения да не са remotely debuggable в production).
     webContentsDebuggingEnabled: false,
   },
   plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
     SplashScreen: {
       launchShowDuration: 1500,
       launchAutoHide: true,
