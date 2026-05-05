@@ -41,6 +41,8 @@ const Index = () => {
 
   // Sync на броя непрочетени с иконата на приложението (червено балонче)
   useAppBadgeSync();
+  // При отваряне → silent push до всички съ-членове за свежи локации
+  usePeerLocationRefresh();
   // Android hardware back → минимизирай вместо да пращаш в /auth
   useHardwareBackButton();
   // Sync избора на стил на картата с базата (между устройства)
