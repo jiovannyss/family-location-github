@@ -201,29 +201,50 @@ jobs:
       - name: Patch Info.plist with location & background usage descriptions
         run: |
           set -e
-          PLIST="ios/App/App/Info.plist"
-          PB=/usr/libexec/PlistBuddy
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
 
-          set_str() {
-            local key="$1"; local val="$2"
-            $PB -c "Set :$key $val" "$PLIST" 2>/dev/null || \
-              $PB -c "Add :$key string $val" "$PLIST"
-          }
+          plist_path = Path("ios/App/App/Info.plist")
+          with plist_path.open("rb") as f:
+              data = plistlib.load(f)
 
-          set_str NSLocationWhenInUseUsageDescription "Семейна локация използва местоположението ви, за да го споделя с членовете на вашите кръгове, докато приложението е отворено."
-          set_str NSLocationAlwaysAndWhenInUseUsageDescription "За да виждат близките ви къде сте в реално време (включително когато приложението е затворено), е нужен достъп „Винаги\". Можете да го изключите по всяко време от Настройки."
-          set_str NSLocationAlwaysUsageDescription "Споделяне на местоположение с членовете на вашите кръгове, дори когато приложението работи на заден план."
-          set_str NSUserNotificationsUsageDescription "Получавайте съобщения от членовете на кръга си и важни известия за местоположение."
+          data["NSLocationWhenInUseUsageDescription"] = (
+              "Семейна локация използва местоположението ви, за да го споделя "
+              "с членовете на вашите кръгове, докато приложението е отворено."
+          )
+          data["NSLocationAlwaysAndWhenInUseUsageDescription"] = (
+              "За да виждат близките ви къде сте в реално време "
+              "(включително когато приложението е затворено), е нужен достъп "
+              "Винаги. Можете да го изключите по всяко време от Настройки."
+          )
+          data["NSLocationAlwaysUsageDescription"] = (
+              "Споделяне на местоположение с членовете на вашите кръгове, "
+              "дори когато приложението работи на заден план."
+          )
+          data["NSUserNotificationsUsageDescription"] = (
+              "Получавайте съобщения от членовете на кръга си и важни "
+              "известия за местоположение."
+          )
+          data["UIBackgroundModes"] = ["location", "fetch", "remote-notification"]
 
-          # UIBackgroundModes array (location, fetch, remote-notification)
-          $PB -c "Delete :UIBackgroundModes" "$PLIST" 2>/dev/null || true
-          $PB -c "Add :UIBackgroundModes array" "$PLIST"
-          $PB -c "Add :UIBackgroundModes:0 string location" "$PLIST"
-          $PB -c "Add :UIBackgroundModes:1 string fetch" "$PLIST"
-          $PB -c "Add :UIBackgroundModes:2 string remote-notification" "$PLIST"
+          with plist_path.open("wb") as f:
+              plistlib.dump(data, f)
 
-          echo "✅ Info.plist patched."
-          $PB -c "Print" "$PLIST" | grep -E "Location|Background|Notifications" || true
+          print("✅ Info.plist patched (plistlib).")
+          for k in (
+              "NSLocationWhenInUseUsageDescription",
+              "NSLocationAlwaysAndWhenInUseUsageDescription",
+              "NSLocationAlwaysUsageDescription",
+              "NSUserNotificationsUsageDescription",
+              "UIBackgroundModes",
+          ):
+              print(f"  {k} = {data.get(k)!r}")
+          PY
+
+          echo "--- Info.plist (relevant keys) ---"
+          /usr/libexec/PlistBuddy -c "Print :NSLocationAlwaysAndWhenInUseUsageDescription" ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Print :UIBackgroundModes" ios/App/App/Info.plist
 
       - name: Patch App.entitlements (Push + APS environment)
         run: |
