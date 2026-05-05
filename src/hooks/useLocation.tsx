@@ -7,6 +7,7 @@ import { getDeviceId } from '@/services/deviceId';
 import { geolocation, type Coords } from '@/services/geolocation';
 import { getDeviceInfo } from '@/services/device';
 import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
+import { uploadLocationPoint } from '@/services/locationUpload';
 
 export function useSharingState() {
   const { user } = useAuth();
@@ -117,16 +118,19 @@ export function useLocationTracking() {
     const sendPos = async (coords: Coords) => {
       const uid = userIdRef.current;
       if (!uid || cancelled) return;
-      const { error: err } = await supabase.from('location_points').insert({
-        user_id: uid,
-        device_id: deviceId,
-        lat: coords.lat,
-        lng: coords.lng,
-        accuracy_m: coords.accuracy,
-        recorded_at: new Date().toISOString(),
-        device_platform: platform,
-      });
-      if (err) console.error('Failed to send location:', err);
+      try {
+        await uploadLocationPoint({
+          userId: uid,
+          deviceId,
+          lat: coords.lat,
+          lng: coords.lng,
+          accuracy: coords.accuracy,
+          recordedAt: new Date().toISOString(),
+          devicePlatform: platform,
+        });
+      } catch (err) {
+        console.error('Failed to send location:', err);
+      }
     };
 
     const doUpdate = async () => {
