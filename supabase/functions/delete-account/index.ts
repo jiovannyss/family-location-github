@@ -43,11 +43,6 @@ Deno.serve(async (req) => {
       });
     }
     const userId = userData.user.id;
-      return new Response(JSON.stringify({ error: 'unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const userId = claims.claims.sub as string;
 
     // Service-role client за пълно изтриване
     const admin = createClient(
