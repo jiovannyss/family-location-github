@@ -17,19 +17,55 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [ready, setReady] = useState(false);
 
-  // При отваряне на линка от имейла, Supabase автоматично създава сесия от hash-а.
   useEffect(() => {
+    let active = true;
+
+    const bootstrapRecovery = async () => {
+      const hash = window.location.hash.startsWith('#')
+        ? new URLSearchParams(window.location.hash.slice(1))
+        : new URLSearchParams();
+
+      const type = hash.get('type');
+      const accessToken = hash.get('access_token');
+      const refreshToken = hash.get('refresh_token');
+
+      if (type === 'recovery' && accessToken && refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+
+        if (error) {
+          toast.error('Линкът за смяна на парола е невалиден или е изтекъл');
+          navigate('/auth', { replace: true });
+          return;
+        }
+
+        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+
+        if (active) {
+          setReady(true);
+        }
+
+        return;
+      }
+
+      const { data } = await supabase.auth.getSession();
+      if (active && data.session) {
+        setReady(true);
+      }
+    };
+
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
         setReady(true);
       }
     });
-    // Ако вече има сесия (напр. току-що дошъл от линк), позволи смяна.
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true);
-    });
+
+    void bootstrapRecovery();
+
     return () => sub.subscription.unsubscribe();
-  }, []);
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,8 +85,7 @@ export default function ResetPassword() {
       return;
     }
     toast.success('Паролата е сменена успешно');
-    await supabase.auth.signOut();
-    navigate('/auth', { replace: true });
+    navigate('/', { replace: true });
   };
 
   return (
@@ -66,7 +101,7 @@ export default function ResetPassword() {
           <CardHeader>
             <CardTitle className="text-xl text-center">Задайте нова парола</CardTitle>
             <CardDescription className="text-center">
-              {ready ? 'Въведете новата си парола.' : 'Отворете линка от имейла, за да продължите.'}
+              {ready ? 'Въведете новата си парола.' : 'Проверяваме линка за смяна на паролата...'}
             </CardDescription>
           </CardHeader>
           <CardContent>
