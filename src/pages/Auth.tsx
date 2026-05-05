@@ -226,8 +226,10 @@ export default function Auth() {
                           toast.error('Въведете валиден имейл за изпращане на линк');
                           return;
                         }
+                        // Винаги използваме production URL — на iOS/Android `window.location.origin`
+                        // е `capacitor://localhost` и линкът от мейла не отваря нищо полезно.
                         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                          redirectTo: `${window.location.origin}/reset-password`,
+                          redirectTo: 'https://family-location.lovable.app/reset-password',
                         });
                         if (error) {
                           toast.error(error.message);
