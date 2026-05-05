@@ -8,6 +8,7 @@ import { geolocation, type Coords } from '@/services/geolocation';
 import { getDeviceInfo } from '@/services/device';
 import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
 import { uploadLocationPoint } from '@/services/locationUpload';
+import { App as CapacitorApp } from '@capacitor/app';
 
 export function useSharingState() {
   const { user } = useAuth();
@@ -96,6 +97,40 @@ export function useLocationTracking() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isNative()) return;
+
+    let disposed = false;
+    let handle: { remove: () => Promise<void> } | null = null;
+
+    void CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+      if (disposed || !isActive || !isSharing) return;
+      void geolocation.checkPermission().then((p) => {
+        if (!disposed) setPermissionState(p.state);
+      });
+      void geolocation.getCurrentPosition()
+        .then((coords) => {
+          if (disposed) return;
+          setCurrentPosition(coords);
+          setError(null);
+        })
+        .catch((err: unknown) => {
+          if (!disposed) {
+            setError(err instanceof Error ? err.message : 'Location error');
+          }
+        });
+    }).then((h) => {
+      handle = h;
+    }).catch(() => {
+      /* ignore on unsupported environments */
+    });
+
+    return () => {
+      disposed = true;
+      if (handle) void handle.remove();
+    };
+  }, [isSharing]);
 
   useEffect(() => {
     if (intervalRef.current) {
