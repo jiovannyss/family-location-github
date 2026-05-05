@@ -7,6 +7,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useCircleMembers, useCircles } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
 import { useAppBadgeSync } from '@/hooks/useAppBadge';
+import { usePeerLocationRefresh } from '@/hooks/usePeerLocationRefresh';
 import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
 import { useMapStyleSync } from '@/hooks/useMapStyleSync';
 import { Circle, MemberWithLocation } from '@/lib/types';
