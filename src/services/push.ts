@@ -15,6 +15,35 @@ import { supabase } from '@/integrations/supabase/client';
 import { isNative, nativePlatform } from './platform';
 import { getDeviceIdAsync } from './deviceId';
 import { notifications } from './notifications';
+import { geolocation } from './geolocation';
+import { uploadLocationPoint } from './locationUpload';
+import { getDeviceId } from './deviceId';
+import { getDeviceInfo } from './device';
+
+/**
+ * Извикан когато получим silent push с type=location_refresh.
+ * Взема свежа локация и я качва — без да показва UI.
+ */
+async function handleLocationRefreshPush() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id;
+    if (!uid) return;
+    const coords = await geolocation.getCurrentPosition();
+    await uploadLocationPoint({
+      userId: uid,
+      deviceId: getDeviceId(),
+      lat: coords.lat,
+      lng: coords.lng,
+      accuracy: coords.accuracy,
+      recordedAt: new Date().toISOString(),
+      devicePlatform: getDeviceInfo().platform,
+    });
+    console.log('[push] location_refresh: uploaded fresh location');
+  } catch (e) {
+    console.warn('[push] location_refresh failed', e);
+  }
+}
 
 // Push е OPT-IN: на Android `PushNotifications.register()` хвърля native
 // Java exception, ако липсва `google-services.json` (FCM config). Този crash
