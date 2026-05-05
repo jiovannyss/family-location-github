@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { supabase } from '@/integrations/supabase/client';
+import { getPublicAppUrl } from '@/lib/publicAppUrl';
 
 const loginSchema = z.object({
   email: z.string().email('Невалиден имейл адрес'),
@@ -226,10 +227,8 @@ export default function Auth() {
                           toast.error('Въведете валиден имейл за изпращане на линк');
                           return;
                         }
-                        // Винаги използваме production URL — на iOS/Android `window.location.origin`
-                        // е `capacitor://localhost` и линкът от мейла не отваря нищо полезно.
                         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                          redirectTo: 'https://family-location.lovable.app/reset-password',
+                          redirectTo: getPublicAppUrl('/reset-password'),
                         });
                         if (error) {
                           toast.error(error.message);
