@@ -69,7 +69,7 @@ export async function logDiagnosticEvent(input: LogDiagnosticInput) {
 
   const { data, error } = await supabase
     .from('diagnostic_events')
-    .insert({
+    .insert([{
       user_id: userId,
       device_id: deviceId,
       platform,
@@ -79,7 +79,7 @@ export async function logDiagnosticEvent(input: LogDiagnosticInput) {
       flow_id: input.flowId ?? null,
       message: input.message ?? null,
       details,
-    })
+    }])
     .select()
     .single();
 
