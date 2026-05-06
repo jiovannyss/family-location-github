@@ -40,6 +40,33 @@ const SITE_NAME = "Семейна Локация"
 const SENDER_DOMAIN = "notify.glowter.com"
 const ROOT_DOMAIN = "family-location.glowter.com"
 const FROM_DOMAIN = "notify.glowter.com" // Domain shown in From address
+const APP_BASE_URL = `https://${ROOT_DOMAIN}`
+
+function getRedirectPath(emailType: string) {
+  return emailType === 'recovery' ? '/reset-password' : '/'
+}
+
+function rewriteConfirmationUrl(originalUrl: string, emailType: string) {
+  const url = new URL(originalUrl)
+  const redirectTo = new URL(getRedirectPath(emailType), APP_BASE_URL).toString()
+
+  url.searchParams.set('redirect_to', redirectTo)
+
+  return url.toString()
+}
+
+function getPlainTextEmail(emailType: string, templateProps: Record<string, string | undefined>) {
+  if (emailType === 'recovery') {
+    return [
+      `Смяна на парола — ${templateProps.siteName ?? SITE_NAME}`,
+      `Получихме заявка за смяна на паролата за акаунта Ви в ${templateProps.siteName ?? SITE_NAME}.`,
+      `Сменете паролата от този линк: ${templateProps.confirmationUrl ?? ''}`,
+      'Ако не сте поискали смяна на парола, може спокойно да игнорирате този имейл.',
+    ].join('\n\n')
+  }
+
+  return null
+}
 
 // Sample data for preview mode ONLY (not used in actual email sending).
 // URLs are baked in at scaffold time from the project's real data.
@@ -218,24 +245,20 @@ async function handleWebhook(req: Request): Promise<Response> {
     )
   }
 
-  // Rewrite the confirmation URL host to our custom domain.
-  // Supabase generates the URL based on the project's Site URL (still
-  // family-location.lovable.app), so we patch it here to point users to
-  // the branded domain instead.
+  // Preserve the original auth verify endpoint and only rewrite redirect_to.
+  // Rewriting the whole host breaks the verify flow because /auth/v1/verify
+  // must stay on the auth backend, not on the frontend app domain.
   let confirmationUrl: string = payload.data.url
   try {
-    const u = new URL(payload.data.url)
-    u.host = ROOT_DOMAIN
-    u.protocol = 'https:'
-    confirmationUrl = u.toString()
+    confirmationUrl = rewriteConfirmationUrl(payload.data.url, emailType)
   } catch (e) {
-    console.warn('Could not rewrite confirmation URL host', { url: payload.data.url, error: e })
+    console.warn('Could not rewrite confirmation URL', { url: payload.data.url, error: e })
   }
 
   // Build template props from payload.data (HookData structure)
   const templateProps = {
     siteName: SITE_NAME,
-    siteUrl: `https://${ROOT_DOMAIN}`,
+    siteUrl: APP_BASE_URL,
     recipient: payload.data.email,
     confirmationUrl,
     token: payload.data.token,
@@ -246,9 +269,10 @@ async function handleWebhook(req: Request): Promise<Response> {
 
   // Render React Email to HTML and plain text
   const html = await renderAsync(React.createElement(EmailTemplate, templateProps))
-  const text = await renderAsync(React.createElement(EmailTemplate, templateProps), {
-    plainText: true,
-  })
+  const text = getPlainTextEmail(emailType, templateProps) ?? await renderAsync(
+    React.createElement(EmailTemplate, templateProps),
+    { plainText: true },
+  )
 
   // Enqueue email for async processing by the dispatcher (process-email-queue).
   const supabase = createClient(

@@ -59,6 +59,25 @@ export default function ResetPassword() {
         return;
       }
 
+      const code = search.get('code');
+      if (search.get('type') === 'recovery' && code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (error) {
+          toast.error('Линкът за смяна на парола е невалиден или е изтекъл');
+          navigate('/auth', { replace: true });
+          return;
+        }
+
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (active) {
+          setReady(true);
+        }
+
+        return;
+      }
+
       const { data } = await supabase.auth.getSession();
       if (active && data.session) {
         setReady(true);
