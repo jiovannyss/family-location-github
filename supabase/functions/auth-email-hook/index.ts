@@ -38,7 +38,7 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 // Configuration
 const SITE_NAME = "Семейна Локация"
 const SENDER_DOMAIN = "notify.glowter.com"
-const ROOT_DOMAIN = "family-location.lovable.app"
+const ROOT_DOMAIN = "family-location.glowter.com"
 const FROM_DOMAIN = "notify.glowter.com" // Domain shown in From address
 const APP_BASE_URL = `https://${ROOT_DOMAIN}`
 
@@ -73,7 +73,7 @@ function getPlainTextEmail(emailType: string, templateProps: Record<string, stri
 // The sample email uses a fixed placeholder (RFC 6761 .test TLD) so the Go backend
 // can always find-and-replace it with the actual recipient when sending test emails,
 // even if the project's domain has changed since the template was scaffolded.
-const SAMPLE_PROJECT_URL = "https://family-location.lovable.app"
+const SAMPLE_PROJECT_URL = "https://family-location.glowter.com"
 const SAMPLE_EMAIL = "user@example.test"
 const SAMPLE_DATA: Record<string, object> = {
   signup: {
