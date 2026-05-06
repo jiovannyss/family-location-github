@@ -17,12 +17,12 @@ const corsHeaders = {
 }
 
 const EMAIL_SUBJECTS: Record<string, string> = {
-  signup: 'Confirm your email',
-  invite: "You've been invited",
-  magiclink: 'Your login link',
-  recovery: 'Reset your password',
-  email_change: 'Confirm your new email',
-  reauthentication: 'Your verification code',
+  signup: 'Потвърдете имейла си — Семейна Локация',
+  invite: 'Покана за Семейна Локация',
+  magiclink: 'Вашият линк за вход',
+  recovery: 'Смяна на парола — Семейна Локация',
+  email_change: 'Потвърдете новия имейл',
+  reauthentication: 'Вашият код за потвърждение',
 }
 
 // Template mapping
@@ -36,10 +36,10 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 }
 
 // Configuration
-const SITE_NAME = "family-location"
+const SITE_NAME = "Семейна Локация"
 const SENDER_DOMAIN = "notify.glowter.com"
-const ROOT_DOMAIN = "glowter.com"
-const FROM_DOMAIN = "glowter.com" // Domain shown in From address (may be root or sender subdomain)
+const ROOT_DOMAIN = "family-location.glowter.com"
+const FROM_DOMAIN = "notify.glowter.com" // Domain shown in From address
 
 // Sample data for preview mode ONLY (not used in actual email sending).
 // URLs are baked in at scaffold time from the project's real data.
