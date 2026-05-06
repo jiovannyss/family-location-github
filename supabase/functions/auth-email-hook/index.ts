@@ -46,7 +46,49 @@ function getRedirectPath(emailType: string) {
   return emailType === 'recovery' ? '/reset-password' : '/'
 }
 
+function buildDirectRecoveryUrl(originalUrl: string) {
+  const original = new URL(originalUrl)
+  const resetUrl = new URL('/reset-password', APP_BASE_URL)
+  const hashParams = original.hash.startsWith('#')
+    ? new URLSearchParams(original.hash.slice(1))
+    : new URLSearchParams()
+
+  if (hashParams.get('access_token') && hashParams.get('refresh_token')) {
+    if (!hashParams.get('type')) {
+      hashParams.set('type', 'recovery')
+    }
+    resetUrl.hash = hashParams.toString()
+    return resetUrl.toString()
+  }
+
+  const tokenHash = original.searchParams.get('token_hash')
+  if (tokenHash) {
+    resetUrl.searchParams.set('token_hash', tokenHash)
+    resetUrl.searchParams.set('type', 'recovery')
+    return resetUrl.toString()
+  }
+
+  const code = original.searchParams.get('code') ?? original.searchParams.get('token')
+  if (code) {
+    resetUrl.searchParams.set('code', code)
+    resetUrl.searchParams.set('type', 'recovery')
+    return resetUrl.toString()
+  }
+
+  if (original.searchParams.get('type')) {
+    resetUrl.searchParams.set('type', original.searchParams.get('type')!)
+  } else {
+    resetUrl.searchParams.set('type', 'recovery')
+  }
+
+  return resetUrl.toString()
+}
+
 function rewriteConfirmationUrl(originalUrl: string, emailType: string) {
+  if (emailType === 'recovery') {
+    return buildDirectRecoveryUrl(originalUrl)
+  }
+
   const url = new URL(originalUrl)
   const redirectTo = new URL(getRedirectPath(emailType), APP_BASE_URL).toString()
 
@@ -262,6 +304,17 @@ async function handleWebhook(req: Request): Promise<Response> {
   let confirmationUrl: string = payload.data.url
   try {
     confirmationUrl = rewriteConfirmationUrl(payload.data.url, emailType)
+    if (emailType === 'recovery') {
+      const confirmation = new URL(confirmationUrl)
+      console.log('Prepared recovery URL', {
+        host: confirmation.hostname,
+        path: confirmation.pathname,
+        hasCode: confirmation.searchParams.has('code'),
+        hasTokenHash: confirmation.searchParams.has('token_hash'),
+        hasHashTokens: confirmation.hash.includes('access_token='),
+        run_id,
+      })
+    }
   } catch (e) {
     console.warn('Could not rewrite confirmation URL', { url: payload.data.url, error: e })
   }
