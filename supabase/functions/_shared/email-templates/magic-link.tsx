@@ -23,7 +23,9 @@ export const MagicLinkEmail = ({
   confirmationUrl,
 }: MagicLinkEmailProps) => (
   <Html lang="en" dir="ltr">
-    <Head />
+    <Head>
+      <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+    </Head>
     <Preview>Your login link for {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>

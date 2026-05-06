@@ -23,7 +23,9 @@ export const RecoveryEmail = ({
   confirmationUrl,
 }: RecoveryEmailProps) => (
   <Html lang="bg" dir="ltr">
-    <Head />
+    <Head>
+      <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+    </Head>
     <Preview>Смяна на парола за {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>

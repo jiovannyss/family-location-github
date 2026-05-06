@@ -33,7 +33,9 @@ export const EmailChangeEmail = ({
   confirmationUrl,
 }: EmailChangeEmailProps) => (
   <Html lang="en" dir="ltr">
-    <Head />
+    <Head>
+      <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+    </Head>
     <Preview>Confirm your email change for {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>

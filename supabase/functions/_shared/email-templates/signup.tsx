@@ -25,7 +25,9 @@ export const SignupEmail = ({
   confirmationUrl,
 }: SignupEmailProps) => (
   <Html lang="bg" dir="ltr">
-    <Head />
+    <Head>
+      <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
+    </Head>
     <Preview>Потвърдете имейла си за {siteName}</Preview>
     <Body style={main}>
       <Container style={container}>
