@@ -38,7 +38,7 @@ const EMAIL_TEMPLATES: Record<string, React.ComponentType<any>> = {
 // Configuration
 const SITE_NAME = "Семейна Локация"
 const SENDER_DOMAIN = "notify.glowter.com"
-const ROOT_DOMAIN = "family-location.glowter.com"
+const ROOT_DOMAIN = "family-location.lovable.app"
 const FROM_DOMAIN = "notify.glowter.com" // Domain shown in From address
 const APP_BASE_URL = `https://${ROOT_DOMAIN}`
 
@@ -269,10 +269,12 @@ async function handleWebhook(req: Request): Promise<Response> {
 
   // Render React Email to HTML and plain text
   const html = await renderAsync(React.createElement(EmailTemplate, templateProps))
-  const text = getPlainTextEmail(emailType, templateProps) ?? await renderAsync(
-    React.createElement(EmailTemplate, templateProps),
-    { plainText: true },
-  )
+  const text = emailType === 'recovery'
+    ? undefined
+    : getPlainTextEmail(emailType, templateProps) ?? await renderAsync(
+        React.createElement(EmailTemplate, templateProps),
+        { plainText: true },
+      )
 
   // Enqueue email for async processing by the dispatcher (process-email-queue).
   const supabase = createClient(

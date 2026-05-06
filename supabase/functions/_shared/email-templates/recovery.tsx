@@ -37,6 +37,10 @@ export const RecoveryEmail = ({
         <Button style={button} href={confirmationUrl}>
           Смени паролата
         </Button>
+        <Text style={linkText}>
+          Ако бутонът не се отваря, използвайте този линк:<br />
+          <a href={confirmationUrl} style={anchor}>{confirmationUrl}</a>
+        </Text>
         <Text style={footer}>
           Ако не сте поискали смяна на парола, може спокойно да игнорирате
           този имейл. Паролата Ви няма да бъде променена.
@@ -70,5 +74,16 @@ const button = {
   borderRadius: '12px',
   padding: '12px 22px',
   textDecoration: 'none',
+}
+const linkText = {
+  fontSize: '13px',
+  color: 'hsl(200, 10%, 35%)',
+  lineHeight: '1.6',
+  margin: '20px 0 0',
+  wordBreak: 'break-all' as const,
+}
+const anchor = {
+  color: 'hsl(174, 58%, 39%)',
+  textDecoration: 'underline',
 }
 const footer = { fontSize: '12px', color: '#999999', margin: '32px 0 0', lineHeight: '1.5' }
