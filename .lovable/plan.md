@@ -1,73 +1,34 @@
-## Какво открих
+## Какво ще направя
 
-iOS workflow-ът (`.github/workflows/build-ios.yml`) прави `bunx cap add ios` при всеки run, което създава девствен native проект със:
-- **Default иконата** на Capacitor (бял квадрат) — `resources/icon.png` НЕ се генерира за iOS, само за Android.
-- **Празен Info.plist** без `NSLocationWhenInUseUsageDescription`, `NSLocationAlwaysAndWhenInUseUsageDescription` и без `UIBackgroundModes`.
+### 1. Замръзнати табове "Кръгове / Карта" (мобилно — Android/iOS)
 
-### Защо това крашва приложението
+В `src/pages/Index.tsx`:
+- Махам контейнера с табовете от вътрешността на `<main>`.
+- Слагам го като `fixed` точно под `<Header />` (header-ът е `fixed top-0` с височина `h-14` на мобилно), с минимално разстояние (около 4px) между двете ленти, така че при скрол на Кръгове или Карта табовете да не помръдват.
+- Самите табове остават с настоящия си стил (pill toggle), но фонът става непрозрачен (`bg-background`), за да не прозира съдържание под тях при скрол.
+- Увеличавам `padding-top` на `<main>` на мобилно, така че списъкът/картата да започват точно под табовете (без скок при скрол).
+- На десктоп (`lg:`) табовете остават скрити както досега — нищо не се променя.
 
-iOS **силово terminate-ва** всяко app, което извика location API без съответния usage-description ключ в Info.plist. Когато потребителят натисне "Споделяне", се извиква `@capacitor-community/background-geolocation` → иска `Always` permission → iOS вижда, че липсва `NSLocationAlwaysAndWhenInUseUsageDescription` → **краш с SIGABRT**. След това приложението влиза в loop където при стартиране отново се опитва да възстанови sharing state, отново краш.
+Резултат: при скрол в "Кръгове" или "Карта" заглавието "Семейна Локация" и табовете под него стоят неподвижни.
 
-### Защо иконата е default
+### 2. Placeholder в полетата за парола
 
-Android workflow има стъпка `bunx @capacitor/assets generate` от `resources/icon.png`. iOS workflow я няма, затова Capacitor вкарва placeholder иконата си.
+Премахвам bullet placeholder-а `"••••••••"` и слагам реален текст в бледо сиво (използва се съществуващият `placeholder:text-muted-foreground` в `Input` — вече е блед/сив).
 
----
+Засягам три места:
 
-## План за поправка
+- **`src/pages/Auth.tsx`** (Login + Register):
+  - Поле "Парола" → `placeholder="Въведете парола"`
+  - Поле "Повторете паролата" → `placeholder="Повторете паролата"`
 
-### 1. Добавяне на стъпка за генериране на икони в iOS workflow
+- **`src/pages/ResetPassword.tsx`** (нова парола след reset):
+  - Поле "Нова парола" → `placeholder="Въведете парола"`
+  - Поле "Повторете паролата" → `placeholder="Повторете паролата"`
 
-След `bunx cap sync ios`, преди build-а:
+Бележка: точките, които се появяват **докато потребителят пише**, идват от `type="password"` (маскиране от браузъра). Това е стандартното и сигурно поведение — не го пипам. Промяната касае само placeholder-а (текста, който се вижда, докато полето е празно). Ако искаш и при писане да няма точки (тоест паролата да се вижда като обикновен текст), кажи — но не препоръчвам, защото е сериозен риск за сигурността.
 
-```yaml
-- name: Generate iOS icons & splash from resources/
-  run: |
-    bunx @capacitor/assets generate \
-      --ios \
-      --iconBackgroundColor '#2A9D8F' \
-      --iconBackgroundColorDark '#2A9D8F' \
-      --assetPath resources
-```
+## Файлове за промяна
 
-Това ще препише `ios/App/App/Assets.xcassets/AppIcon.appiconset/` с правилните размери от `resources/icon.png`.
-
-### 2. Patch на Info.plist с location & background ключове
-
-Нова стъпка след `cap sync`, която чрез `PlistBuddy` добавя задължителните ключове (вече описани в `resources/IOS_READINESS.md`):
-
-- `NSLocationWhenInUseUsageDescription`
-- `NSLocationAlwaysAndWhenInUseUsageDescription`  ← **критично, без него = краш**
-- `NSLocationAlwaysUsageDescription`  (legacy, препоръчан от Apple)
-- `UIBackgroundModes` array с: `location`, `fetch`, `remote-notification`
-
-Текстовете на български са вече подготвени в `IOS_READINESS.md`. Скриптът ще е idempotent (`Add` или `Set`).
-
-### 3. Добавяне на Push Notifications & Background Modes entitlement
-
-Освен Info.plist, iOS изисква и `App.entitlements` файл с:
-- `aps-environment` = `production`
-- (UIBackgroundModes се чете от Info.plist, но Push capability трябва entitlement)
-
-Workflow-ът ще генерира/патчне `ios/App/App/App.entitlements` и ще го свърже в `App.xcodeproj` (чрез ruby `xcodeproj` gem, който вече се използва за signing patch-а).
-
-> Забележка: provisioning profile-ът, който използваш, **трябва вече** да включва Push Notifications capability в Apple Developer Portal. Ако не — ще трябва да го регенерираш там и да обновиш `IOS_PROVISIONING_PROFILE_BASE64` secret-а. Ще ти кажа как да провериш.
-
-### 4. (По избор) Bump на версия
-
-След промените първият build за TestFlight ще трябва да е с нов CFBundleVersion — това вече се прави автоматично от `github.run_number`.
-
----
-
-## Файлове, които ще се променят
-
-- `.github/workflows/build-ios.yml` — добавени 3 нови стъпки (icons, Info.plist patch, entitlements patch)
-
-## Какво трябва да направиш ти след промените
-
-1. Пускаш билд с `build_type: validate` — проверяваш, че `.ipa` се изгражда без грешка.
-2. Пускаш билд с `build_type: testflight`.
-3. Тестерите **деинсталират старата версия** от iPhone-а (важно — старата е "счупена" с default икона и без permission keys, iOS може да кешира state).
-4. Инсталират новата от TestFlight → при включване на Sharing трябва да се появи Apple permission dialog с твоя BG текст вместо краш.
-
-Ако след това все още крашва — ще погледнем crash log-а от Xcode → Window → Devices and Simulators → View Device Logs.
+- `src/pages/Index.tsx` — sticky/fixed mobile tabs + padding на `<main>`
+- `src/pages/Auth.tsx` — два placeholder-а
+- `src/pages/ResetPassword.tsx` — два placeholder-а

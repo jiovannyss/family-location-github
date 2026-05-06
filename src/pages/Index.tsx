@@ -162,11 +162,12 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <Header />
 
-      <main
-        className="container px-3 sm:px-4 py-4 sm:py-6 max-w-7xl pt-[calc(3.5rem+env(safe-area-inset-top)+1rem)] sm:pt-[calc(4rem+env(safe-area-inset-top)+1.5rem)]"
+      {/* Mobile tabs — fixed under the header so they don't move on scroll */}
+      <div
+        className="lg:hidden fixed inset-x-0 z-40 bg-background border-b border-border/50 px-3 pb-2"
+        style={{ top: 'calc(3.5rem + env(safe-area-inset-top) + 4px)' }}
       >
-        {/* Mobile tabs */}
-        <div className="lg:hidden mb-4 flex gap-2 p-1 bg-muted rounded-xl">
+        <div className="flex gap-2 p-1 bg-muted rounded-xl max-w-7xl mx-auto">
           <Button
             variant={mobileTab === 'list' ? 'default' : 'ghost'}
             size="sm"
@@ -186,7 +187,11 @@ const Index = () => {
             Карта
           </Button>
         </div>
+      </div>
 
+      <main
+        className="container px-3 sm:px-4 py-4 sm:py-6 max-w-7xl pt-[calc(3.5rem+env(safe-area-inset-top)+3.75rem)] sm:pt-[calc(4rem+env(safe-area-inset-top)+1.5rem)]"
+      >
         {/* Desktop: two columns — map fixed to viewport, sidebar scrolls */}
         <div className="hidden lg:grid lg:grid-cols-[380px,1fr] gap-6 lg:h-[calc(100vh-4rem-env(safe-area-inset-top)-3rem)]">
           <div className="overflow-y-auto pr-2 -mr-2">
