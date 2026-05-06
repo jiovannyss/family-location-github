@@ -29,10 +29,19 @@ export default function ResetPassword() {
       const accessToken = hash.get('access_token');
       const refreshToken = hash.get('refresh_token');
 
-      if (type === 'recovery' && accessToken && refreshToken) {
+      const search = new URLSearchParams(window.location.search);
+      const searchType = search.get('type');
+      const searchAccessToken = search.get('access_token');
+      const searchRefreshToken = search.get('refresh_token');
+
+      const finalType = type ?? searchType;
+      const finalAccessToken = accessToken ?? searchAccessToken;
+      const finalRefreshToken = refreshToken ?? searchRefreshToken;
+
+      if (finalType === 'recovery' && finalAccessToken && finalRefreshToken) {
         const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
+          access_token: finalAccessToken,
+          refresh_token: finalRefreshToken,
         });
 
         if (error) {
@@ -41,7 +50,7 @@ export default function ResetPassword() {
           return;
         }
 
-        window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+        window.history.replaceState({}, document.title, window.location.pathname);
 
         if (active) {
           setReady(true);
