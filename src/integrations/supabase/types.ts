@@ -73,6 +73,48 @@ export type Database = {
         }
         Relationships: []
       }
+      diagnostic_events: {
+        Row: {
+          created_at: string
+          details: Json
+          device_id: string
+          flow_id: string | null
+          id: string
+          message: string | null
+          platform: string
+          source: string
+          stage: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          details?: Json
+          device_id: string
+          flow_id?: string | null
+          id?: string
+          message?: string | null
+          platform: string
+          source: string
+          stage: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          details?: Json
+          device_id?: string
+          flow_id?: string | null
+          id?: string
+          message?: string | null
+          platform?: string
+          source?: string
+          stage?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       email_send_log: {
         Row: {
           created_at: string
