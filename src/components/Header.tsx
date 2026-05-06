@@ -55,9 +55,9 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-10 w-10 rounded-full p-0">
+            <Button variant="ghost" className="relative h-10 w-10 rounded-full p-0 touch-manipulation">
               {isLoading ? (
                 <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
                   <Loader2 className="w-4 h-4 animate-spin" />
