@@ -3,8 +3,8 @@
 Production-ready compliance package for submitting **Family Location** (Семейна Локация) to Google Play and the Apple App Store. Use this document as the single source of truth when filling out store consoles.
 
 > **Public legal URLs (required by both stores):**
-> - Privacy Policy: `https://family-location.lovable.app/privacy`
-> - Terms of Service: `https://family-location.lovable.app/terms`
+> - Privacy Policy: `https://family-location.glowter.com/privacy`
+> - Terms of Service: `https://family-location.glowter.com/terms`
 >
 > Both pages are mobile-friendly, served over HTTPS, and contain BG + EN content.
 
@@ -89,7 +89,7 @@ Upload to YouTube (unlisted) and paste the link in the Play Console declaration.
 
 | Section | Answer |
 |---|---|
-| Privacy Policy URL | `https://family-location.lovable.app/privacy` |
+| Privacy Policy URL | `https://family-location.glowter.com/privacy` |
 | Ads | **No, my app does not contain ads** |
 | App access | **All or some functionality is restricted** → provide demo credentials (see §5) |
 | Content rating | Use the IARC questionnaire. Family Location: no violence, no sexual content, no drugs, location sharing → typically **Everyone / PEGI 3** with a "Users interact" + "Shares location" disclosure. |
@@ -168,8 +168,8 @@ Pre-seeded:
 >
 > Background location is the core feature: it lets accepted family-circle members continue to see each other when the phone is locked or minimized.
 > Account deletion is available in-app at: Settings → Изтрий акаунта (Delete account).
-> Privacy policy: https://family-location.lovable.app/privacy
-> Terms: https://family-location.lovable.app/terms
+> Privacy policy: https://family-location.glowter.com/privacy
+> Terms: https://family-location.glowter.com/terms
 
 ---
 

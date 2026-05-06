@@ -50,6 +50,17 @@ function rewriteConfirmationUrl(originalUrl: string, emailType: string) {
   const url = new URL(originalUrl)
   const redirectTo = new URL(getRedirectPath(emailType), APP_BASE_URL).toString()
 
+  // Force-rewrite any lovable.app host to the custom app domain.
+  // This catches cases where Supabase SITE_URL is still the default
+  // .lovable.app subdomain and the recovery link uses an implicit
+  // hash flow like SITE_URL/#access_token=... instead of /auth/v1/verify.
+  if (url.hostname.endsWith('.lovable.app') || url.hostname === 'lovable.app') {
+    const rewritten = new URL(getRedirectPath(emailType), APP_BASE_URL)
+    rewritten.search = url.search
+    rewritten.hash = url.hash
+    return rewritten.toString()
+  }
+
   url.searchParams.set('redirect_to', redirectTo)
 
   return url.toString()

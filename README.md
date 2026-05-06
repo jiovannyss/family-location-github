@@ -140,7 +140,7 @@ GitHub → **Actions → "Build Android (manual)" → Run workflow → build_typ
 6. В **Testers** добави email-и (или Google Group). Тестерите получават линк (`https://play.google.com/apps/internaltest/...`) → opt-in → инсталация през Play Store.
 
 > **Преди първия Internal Testing build** трябва да попълниш в Play Console:
-> - **Privacy Policy URL** → `https://family-location.lovable.app/privacy`
+> - **Privacy Policy URL** → `https://family-location.glowter.com/privacy`
 > - **Data safety form** (декларация за collected data — local + push token)
 > - **App content** → Target audience, Ads, Permissions declaration (особено `ACCESS_BACKGROUND_LOCATION`)
 > - **Content rating** въпросник.
