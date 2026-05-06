@@ -1,13 +1,13 @@
 project_id = "mrcetakiztvbdwaduvco"
 
-[functions.send-push]
-verify_jwt = false
-
-[functions.delete-account]
-verify_jwt = true
-
-[functions.request-location-refresh]
-verify_jwt = true
-
-[functions.process-email-queue]
-verify_jwt = true
+[functions]
+  [functions.auth-email-hook]
+    verify_jwt = false
+  [functions.delete-account]
+    verify_jwt = true
+  [functions.process-email-queue]
+    verify_jwt = true
+  [functions.request-location-refresh]
+    verify_jwt = true
+  [functions.send-push]
+    verify_jwt = false
