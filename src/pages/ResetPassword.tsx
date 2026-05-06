@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+type RecoveryOtpType = 'recovery';
+
 export default function ResetPassword() {
   const navigate = useNavigate();
   const [password, setPassword] = useState('');
@@ -62,6 +64,28 @@ export default function ResetPassword() {
       const code = search.get('code');
       if (search.get('type') === 'recovery' && code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+        if (error) {
+          toast.error('Линкът за смяна на парола е невалиден или е изтекъл');
+          navigate('/auth', { replace: true });
+          return;
+        }
+
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (active) {
+          setReady(true);
+        }
+
+        return;
+      }
+
+      const tokenHash = search.get('token_hash');
+      if (search.get('type') === 'recovery' && tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({
+          type: 'recovery' as RecoveryOtpType,
+          token_hash: tokenHash,
+        });
 
         if (error) {
           toast.error('Линкът за смяна на парола е невалиден или е изтекъл');
