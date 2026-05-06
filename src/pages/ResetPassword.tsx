@@ -166,7 +166,7 @@ export default function ResetPassword() {
                     id="password"
                     type={show ? 'text' : 'password'}
                     autoComplete="new-password"
-                    placeholder="••••••••"
+                    placeholder="Въведете парола"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10 pr-10"
@@ -190,7 +190,7 @@ export default function ResetPassword() {
                     id="confirm"
                     type={show ? 'text' : 'password'}
                     autoComplete="new-password"
-                    placeholder="••••••••"
+                    placeholder="Повторете паролата"
                     value={confirm}
                     onChange={(e) => setConfirm(e.target.value)}
                     className="pl-10"
