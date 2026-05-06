@@ -218,12 +218,26 @@ async function handleWebhook(req: Request): Promise<Response> {
     )
   }
 
+  // Rewrite the confirmation URL host to our custom domain.
+  // Supabase generates the URL based on the project's Site URL (still
+  // family-location.lovable.app), so we patch it here to point users to
+  // the branded domain instead.
+  let confirmationUrl: string = payload.data.url
+  try {
+    const u = new URL(payload.data.url)
+    u.host = ROOT_DOMAIN
+    u.protocol = 'https:'
+    confirmationUrl = u.toString()
+  } catch (e) {
+    console.warn('Could not rewrite confirmation URL host', { url: payload.data.url, error: e })
+  }
+
   // Build template props from payload.data (HookData structure)
   const templateProps = {
     siteName: SITE_NAME,
     siteUrl: `https://${ROOT_DOMAIN}`,
     recipient: payload.data.email,
-    confirmationUrl: payload.data.url,
+    confirmationUrl,
     token: payload.data.token,
     email: payload.data.email,
     oldEmail: payload.data.old_email,
