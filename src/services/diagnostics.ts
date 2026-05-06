@@ -34,9 +34,9 @@ interface LogDiagnosticInput {
 function sanitizeDetails(details?: Record<string, unknown>): Json {
   if (!details) return {};
   try {
-    return JSON.parse(JSON.stringify(details)) as Record<string, unknown>;
+    return JSON.parse(JSON.stringify(details)) as Json;
   } catch {
-    return { serialization_error: true };
+    return { serialization_error: true } as Json;
   }
 }
 
