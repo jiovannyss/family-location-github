@@ -162,10 +162,10 @@ const Index = () => {
     <div className="min-h-screen bg-background">
       <Header />
 
-      {/* Mobile tabs — fixed under the header so they don't move on scroll */}
+      {/* Mobile tabs — fixed flush under the header (no gap) */}
       <div
-        className="lg:hidden fixed inset-x-0 z-40 bg-background border-b border-border/50 px-3 pb-2"
-        style={{ top: 'calc(3.5rem + env(safe-area-inset-top) + 4px)' }}
+        className="lg:hidden fixed inset-x-0 z-40 bg-background border-b border-border/50 px-3 py-1"
+        style={{ top: 'calc(3.5rem + env(safe-area-inset-top))' }}
       >
         <div className="flex gap-2 p-1 bg-muted rounded-xl max-w-7xl mx-auto">
           <Button
