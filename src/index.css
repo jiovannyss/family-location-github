@@ -311,8 +311,8 @@
    ───────────────────────────────────────────── */
 @supports (padding: max(0px)) {
   body {
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
+    /* Top/bottom safe-areas се хендълват от fixed header-а и от
+       съдържанието (pt/pb), за да не се „бута“ хедърът при iOS bounce. */
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
   }
