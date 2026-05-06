@@ -267,14 +267,14 @@ async function handleWebhook(req: Request): Promise<Response> {
     newEmail: payload.data.new_email,
   }
 
-  // Render React Email to HTML and plain text
+  // Render React Email to HTML and plain text.
+  // Plain text MUST always be present — the email API rejects sends without it.
   const html = await renderAsync(React.createElement(EmailTemplate, templateProps))
-  const text = emailType === 'recovery'
-    ? undefined
-    : getPlainTextEmail(emailType, templateProps) ?? await renderAsync(
-        React.createElement(EmailTemplate, templateProps),
-        { plainText: true },
-      )
+  const text =
+    getPlainTextEmail(emailType, templateProps) ??
+    (await renderAsync(React.createElement(EmailTemplate, templateProps), {
+      plainText: true,
+    }))
 
   // Enqueue email for async processing by the dispatcher (process-email-queue).
   const supabase = createClient(
