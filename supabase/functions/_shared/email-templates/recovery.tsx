@@ -18,11 +18,51 @@ interface RecoveryEmailProps {
   confirmationUrl: string
 }
 
+function normalizeRecoveryUrl(confirmationUrl: string) {
+  const appBaseUrl = 'https://family-location.glowter.com'
+  const resetUrl = new URL('/reset-password', appBaseUrl)
+
+  try {
+    const original = new URL(confirmationUrl)
+    const hashParams = original.hash.startsWith('#')
+      ? new URLSearchParams(original.hash.slice(1))
+      : new URLSearchParams()
+
+    if (hashParams.get('access_token') && hashParams.get('refresh_token')) {
+      if (!hashParams.get('type')) {
+        hashParams.set('type', 'recovery')
+      }
+      resetUrl.hash = hashParams.toString()
+      return resetUrl.toString()
+    }
+
+    const tokenHash = original.searchParams.get('token_hash')
+    if (tokenHash) {
+      resetUrl.searchParams.set('token_hash', tokenHash)
+      resetUrl.searchParams.set('type', 'recovery')
+      return resetUrl.toString()
+    }
+
+    const code = original.searchParams.get('code') ?? original.searchParams.get('token')
+    if (code) {
+      resetUrl.searchParams.set('code', code)
+      resetUrl.searchParams.set('type', 'recovery')
+      return resetUrl.toString()
+    }
+  } catch {
+    return 'https://family-location.glowter.com/reset-password'
+  }
+
+  return 'https://family-location.glowter.com/reset-password'
+}
+
 export const RecoveryEmail = ({
   siteName,
   confirmationUrl,
-}: RecoveryEmailProps) => (
-  <Html lang="bg" dir="ltr">
+}: RecoveryEmailProps) => {
+  const normalizedConfirmationUrl = normalizeRecoveryUrl(confirmationUrl)
+
+  return <Html lang="bg" dir="ltr">
     <Head>
       <meta httpEquiv="Content-Type" content="text/html; charset=UTF-8" />
     </Head>
@@ -34,12 +74,12 @@ export const RecoveryEmail = ({
           Получихме заявка за смяна на паролата за акаунта Ви в {siteName}.
           Натиснете бутона по-долу, за да зададете нова парола.
         </Text>
-        <Button style={button} href={confirmationUrl}>
+        <Button style={button} href={normalizedConfirmationUrl}>
           Смени паролата
         </Button>
         <Text style={linkText}>
           Ако бутонът не се отваря, използвайте този линк:<br />
-          <a href={confirmationUrl} style={anchor}>{confirmationUrl}</a>
+          <a href={normalizedConfirmationUrl} style={anchor}>{normalizedConfirmationUrl}</a>
         </Text>
         <Text style={footer}>
           Ако не сте поискали смяна на парола, може спокойно да игнорирате
@@ -48,7 +88,7 @@ export const RecoveryEmail = ({
       </Container>
     </Body>
   </Html>
-)
+}
 
 export default RecoveryEmail
 
