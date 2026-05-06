@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { z } from 'zod';
@@ -37,6 +38,10 @@ export default function Auth() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [forgotPasswordSent, setForgotPasswordSent] = useState(false);
   
   const { signIn, signUp, user, loading } = useAuth();
   const navigate = useNavigate();
@@ -48,6 +53,12 @@ export default function Auth() {
       navigate('/', { replace: true });
     }
   }, [user, loading, navigate]);
+
+  useEffect(() => {
+    if (!forgotPasswordOpen) return;
+    setForgotPasswordEmail(email);
+    setForgotPasswordSent(false);
+  }, [forgotPasswordOpen, email]);
 
   const validateForm = () => {
     try {
@@ -108,6 +119,27 @@ export default function Auth() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleForgotPassword = async () => {
+    const parsed = z.string().email().safeParse(forgotPasswordEmail.trim());
+    if (!parsed.success) {
+      toast.error('Въведете валиден имейл адрес');
+      return;
+    }
+
+    setForgotPasswordLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
+      redirectTo: getPublicAppUrl('/reset-password'),
+    });
+    setForgotPasswordLoading(false);
+
+    if (error) {
+      toast.error('Не успяхме да изпратим имейла. Опитайте отново след малко.');
+      return;
+    }
+
+    setForgotPasswordSent(true);
   };
 
   return (
@@ -222,20 +254,7 @@ export default function Auth() {
                   <div className="text-right">
                     <button
                       type="button"
-                      onClick={async () => {
-                        if (!email || !z.string().email().safeParse(email).success) {
-                          toast.error('Въведете валиден имейл за изпращане на линк');
-                          return;
-                        }
-                        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                          redirectTo: getPublicAppUrl('/reset-password'),
-                        });
-                        if (error) {
-                          toast.error(error.message);
-                        } else {
-                          toast.success('Изпратихме ви имейл с линк за смяна на паролата');
-                        }
-                      }}
+                      onClick={() => setForgotPasswordOpen(true)}
                       className="text-xs text-muted-foreground hover:text-primary"
                     >
                       Забравена парола?
@@ -325,6 +344,68 @@ export default function Auth() {
             </p>
           </CardContent>
         </Card>
+
+        <Dialog open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
+          <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md rounded-2xl border-border bg-card p-6">
+            <DialogHeader>
+              <DialogTitle>Смяна на парола</DialogTitle>
+              <DialogDescription>
+                {forgotPasswordSent
+                  ? 'Проверете имейла си за линк за нулиране на паролата. Ако не се появи в рамките на няколко минути, проверете папката със спам.'
+                  : 'Въведете имейла, с който влизате в приложението.'}
+              </DialogDescription>
+            </DialogHeader>
+
+            {forgotPasswordSent ? (
+              <Button
+                type="button"
+                variant="hero"
+                className="w-full"
+                onClick={() => {
+                  setForgotPasswordOpen(false);
+                  navigate('/auth', { replace: true });
+                }}
+              >
+                Върнете се за вход
+              </Button>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="forgot-password-email">Имейл</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="forgot-password-email"
+                      type="email"
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      autoComplete="email"
+                      placeholder="Въведете имейл"
+                      value={forgotPasswordEmail}
+                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="hero"
+                  className="w-full"
+                  disabled={forgotPasswordLoading}
+                  onClick={handleForgotPassword}
+                >
+                  {forgotPasswordLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    'Изпрати имейл за промяна на паролата'
+                  )}
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </motion.div>
     </div>
   );
