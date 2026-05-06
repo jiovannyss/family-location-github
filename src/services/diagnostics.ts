@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import type { Json } from '@/integrations/supabase/types';
 import { getDeviceIdAsync } from './deviceId';
 import { getDeviceInfo } from './device';
 
@@ -30,7 +31,7 @@ interface LogDiagnosticInput {
   details?: Record<string, unknown>;
 }
 
-function sanitizeDetails(details?: Record<string, unknown>) {
+function sanitizeDetails(details?: Record<string, unknown>): Json {
   if (!details) return {};
   try {
     return JSON.parse(JSON.stringify(details)) as Record<string, unknown>;
