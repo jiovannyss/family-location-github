@@ -145,224 +145,319 @@ async function loadPushPlugin(): Promise<PushPlugin | null> {
   }
 }
 
-class NativePushService implements PushService {
-  private listenersAttached = false;
-  private currentUserId: string | null = null;
-  private currentToken: string | null = null;
+let registerInvocationSeq = 0;
+let activeRegisterInvocationCount = 0;
 
+function nextRegisterInvocationId() {
+  registerInvocationSeq += 1;
+  return `push-reg-${Date.now()}-${registerInvocationSeq}`;
+}
+
+class NativePushService implements PushService {
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
-    pushLog('STEP 1: registerForUser called', {
+    const invocationId = nextRegisterInvocationId();
+    activeRegisterInvocationCount += 1;
+
+    let registrationHandle: { remove: () => Promise<void> } | null = null;
+    let registrationErrorHandle: { remove: () => Promise<void> } | null = null;
+
+    pushDiag.lifecycleStarted = true;
+    pushDiag.registerCalled = false;
+    pushDiag.registerCallError = null;
+    pushDiag.registrationEventFired = false;
+    pushDiag.registrationError = null;
+    pushDiag.lastDbUpsertError = null;
+    pushDiag.earlyReturnReason = null;
+    pushDiag.listenersAttached = false;
+
+    pushLog(`${invocationId} ENTER registerForUser`, {
       userId,
+      activeInvocationCount: activeRegisterInvocationCount,
       nativeDetected: isNative(),
       platform: nativePlatform(),
       pushEnabled: PUSH_ENABLED,
       disableFlag: import.meta.env.VITE_DISABLE_PUSH ?? null,
     });
 
-    pushLog('STEP 2: native platform check', { isNative: isNative(), platform: nativePlatform() });
-    if (PUSH_DISABLED) {
-      pushDiag.earlyReturnReason = 'push disabled by VITE_DISABLE_PUSH or non-native platform';
-      pushLog('EARLY RETURN @ STEP 2: PUSH_DISABLED', { pushEnabled: PUSH_ENABLED });
-      return;
-    }
-
-    pushLog('STEP 3: storing currentUserId', { userId });
-    this.currentUserId = userId;
-
-    pushLog('STEP 4: BEFORE loadPushPlugin()');
-    let Push: PushPlugin | null = null;
     try {
-      const watchdogs = [2000, 5000, 10000].map((ms) =>
-        setTimeout(() => pushLog(`STEP 4: WATCHDOG loadPushPlugin pending after ${ms}ms`), ms)
-      );
-      const loadStart = Date.now();
-      pushLog('STEP 4.1: awaiting loadPushPlugin()...');
-      Push = await loadPushPlugin();
-      watchdogs.forEach(clearTimeout);
-      pushLog('AFTER await loadPushPlugin in caller', {
-        elapsedMs: Date.now() - loadStart,
-        loaded: !!Push,
-        pushType: typeof Push,
-        pushKeys: Push ? Object.keys(Push as any) : null,
-        pluginLoadError: pushDiag.pluginLoadError,
+      pushLog(`${invocationId} STEP native platform check`, {
+        isNative: isNative(),
+        platform: nativePlatform(),
+        activeInvocationCount: activeRegisterInvocationCount,
       });
-    } catch (e) {
-      const err = e as Error;
-      pushDiag.earlyReturnReason = 'loadPushPlugin threw: ' + err?.message;
-      pushLog('EARLY RETURN @ STEP 4: loadPushPlugin threw', {
-        error: err?.message,
-        stack: err?.stack || '(no stack)',
-      });
-      return;
-    }
-    pushLog('STEP 4.3: post-await Push variable check', { hasPush: !!Push });
-    if (!Push) {
-      pushDiag.earlyReturnReason = 'push plugin not loaded';
-      pushLog('EARLY RETURN @ STEP 4: plugin null', { pluginLoadError: pushDiag.pluginLoadError });
-      return;
-    }
-    pushLog('STEP 4.4: Push non-null, entering main try block');
-
-    try {
-      pushLog('STEP 4.5: verifying checkPermissions method exists');
-      const checkPermsType = typeof (Push as any).checkPermissions;
-      pushLog('STEP 4.6: checkPermissions method type', { type: checkPermsType });
-      if (checkPermsType !== 'function') {
-        pushDiag.earlyReturnReason = 'checkPermissions is not a function: ' + checkPermsType;
-        pushLog('EARLY RETURN @ STEP 4.6: checkPermissions missing', { type: checkPermsType });
-        return;
-      }
-      pushLog('STEP 5: BEFORE Push.checkPermissions()');
-      let perm: { receive: string };
-      try {
-        const cpStart = Date.now();
-        const cpWatchdog = setTimeout(
-          () => pushLog('STEP 5: WATCHDOG checkPermissions pending >3s'),
-          3000
-        );
-        perm = await Push.checkPermissions();
-        clearTimeout(cpWatchdog);
-        pushLog('STEP 5: AFTER Push.checkPermissions()', {
-          receive: perm?.receive,
-          elapsedMs: Date.now() - cpStart,
+      if (PUSH_DISABLED) {
+        pushDiag.earlyReturnReason = 'push disabled by VITE_DISABLE_PUSH or non-native platform';
+        pushLog(`${invocationId} RETURN PUSH_DISABLED`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          pushEnabled: PUSH_ENABLED,
         });
-      } catch (e) {
-        const err = e as Error;
-        pushDiag.registerCallError = 'checkPermissions threw: ' + err?.message;
-        pushDiag.earlyReturnReason = pushDiag.registerCallError;
-        pushLog('EARLY RETURN @ STEP 5: checkPermissions threw', { error: err?.message, stack: err?.stack || '(no stack)' });
         return;
       }
+
+      pushLog(`${invocationId} BEFORE await import('@capacitor/push-notifications')`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+      const importWatchdog = setTimeout(() => {
+        pushLog(`${invocationId} WATCHDOG import pending after 10000ms`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+      }, 10000);
+      const module = await import('@capacitor/push-notifications');
+      clearTimeout(importWatchdog);
+      pushLog(`${invocationId} AFTER await import('@capacitor/push-notifications')`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+        moduleKeys: module ? Object.keys(module) : null,
+        hasPushNotifications: !!module?.PushNotifications,
+      });
+
+      const Push = module?.PushNotifications ?? null;
+      if (!Push) {
+        pushDiag.pluginLoadError = 'PushNotifications export missing';
+        pushDiag.earlyReturnReason = 'push plugin export missing';
+        pushLog(`${invocationId} RETURN plugin export missing`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          moduleKeys: module ? Object.keys(module) : null,
+        });
+        return;
+      }
+      pushDiag.pluginLoadError = null;
+
+      const removeAllListenersType = typeof (Push as any).removeAllListeners;
+      pushLog(`${invocationId} STEP removeAllListeners type check`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+        type: removeAllListenersType,
+      });
+      if (removeAllListenersType === 'function') {
+        pushLog(`${invocationId} BEFORE await Push.removeAllListeners()`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+        const removeWatchdog = setTimeout(() => {
+          pushLog(`${invocationId} WATCHDOG removeAllListeners pending after 5000ms`, {
+            activeInvocationCount: activeRegisterInvocationCount,
+          });
+        }, 5000);
+        await Push.removeAllListeners();
+        clearTimeout(removeWatchdog);
+        pushLog(`${invocationId} AFTER await Push.removeAllListeners()`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+      } else {
+        pushLog(`${invocationId} SKIP Push.removeAllListeners()`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          reason: 'method missing',
+        });
+      }
+
+      let resolveToken!: (token: string) => void;
+      let rejectToken!: (error: Error) => void;
+      const tokenPromise = new Promise<string>((resolve, reject) => {
+        resolveToken = resolve;
+        rejectToken = reject;
+      });
+
+      pushLog(`${invocationId} BEFORE await Push.addListener('registration')`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+      const registrationWatchdog = setTimeout(() => {
+        pushLog(`${invocationId} WATCHDOG registration listener attach pending after 5000ms`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+      }, 5000);
+      registrationHandle = await Push.addListener('registration', (token) => {
+        const tokenValue = token?.value ?? '';
+        const tokenLength = tokenValue.length;
+        pushDiag.registrationEventFired = true;
+        pushDiag.lastTokenLength = tokenLength;
+        pushDiag.lastTokenAt = new Date().toISOString();
+        pushLog(`${invocationId} EVENT registration success token`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          tokenLength,
+        });
+        resolveToken(tokenValue);
+      });
+      clearTimeout(registrationWatchdog);
+      pushLog(`${invocationId} AFTER await Push.addListener('registration')`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+
+      pushLog(`${invocationId} BEFORE await Push.addListener('registrationError')`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+      const registrationErrorWatchdog = setTimeout(() => {
+        pushLog(`${invocationId} WATCHDOG registrationError listener attach pending after 5000ms`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+      }, 5000);
+      registrationErrorHandle = await Push.addListener('registrationError', (err) => {
+        const error = err instanceof Error ? err : new Error(typeof err === 'string' ? err : JSON.stringify(err));
+        pushDiag.registrationError = error.message;
+        pushLog(`${invocationId} EVENT registrationError`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          error: error.message,
+          stack: error.stack || '(no stack)',
+        });
+        rejectToken(error);
+      });
+      clearTimeout(registrationErrorWatchdog);
+      pushDiag.listenersAttached = true;
+      pushLog(`${invocationId} AFTER await Push.addListener('registrationError')`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+
+      pushLog(`${invocationId} BEFORE await Push.checkPermissions()`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+      const checkPermsWatchdog = setTimeout(() => {
+        pushLog(`${invocationId} WATCHDOG checkPermissions pending after 5000ms`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+      }, 5000);
+      let perm = await Push.checkPermissions();
+      clearTimeout(checkPermsWatchdog);
       pushDiag.lastPermissionState = perm.receive;
+      pushLog(`${invocationId} AFTER await Push.checkPermissions()`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+        receive: perm.receive,
+      });
 
       if (perm.receive !== 'granted') {
-        pushLog('STEP 6: BEFORE Push.requestPermissions()', { current: perm.receive });
-        try {
-          perm = await Push.requestPermissions();
-          pushDiag.lastPermissionState = perm.receive;
-          pushLog('STEP 6: AFTER Push.requestPermissions()', { receive: perm.receive });
-        } catch (e) {
-          const msg = (e as Error).message;
-          pushDiag.registerCallError = 'requestPermissions failed: ' + msg;
-          pushDiag.earlyReturnReason = pushDiag.registerCallError;
-          pushLog('EARLY RETURN @ STEP 6: requestPermissions threw', { error: msg });
-          return;
-        }
+        pushLog(`${invocationId} BEFORE await Push.requestPermissions()`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          current: perm.receive,
+        });
+        const requestPermsWatchdog = setTimeout(() => {
+          pushLog(`${invocationId} WATCHDOG requestPermissions pending after 5000ms`, {
+            activeInvocationCount: activeRegisterInvocationCount,
+          });
+        }, 5000);
+        perm = await Push.requestPermissions();
+        clearTimeout(requestPermsWatchdog);
+        pushDiag.lastPermissionState = perm.receive;
+        pushLog(`${invocationId} AFTER await Push.requestPermissions()`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          receive: perm.receive,
+        });
       } else {
-        pushLog('STEP 6: skipped — permission already granted');
+        pushLog(`${invocationId} SKIP Push.requestPermissions()`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          reason: 'permission already granted',
+        });
       }
 
       if (perm.receive !== 'granted') {
         pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
         pushDiag.earlyReturnReason = pushDiag.registerCallError;
-        pushLog('EARLY RETURN @ STEP 7: permission not granted after request', { receive: perm.receive });
-        return;
-      }
-      pushLog('STEP 7: permission granted confirmed');
-
-      pushLog('STEP 8: BEFORE attachListeners()');
-      try {
-        await this.attachListeners(Push);
-        pushLog('STEP 8: AFTER attachListeners()', { listenersAttached: this.listenersAttached });
-      } catch (e) {
-        const msg = (e as Error).message;
-        pushDiag.earlyReturnReason = 'attachListeners threw: ' + msg;
-        pushLog('EARLY RETURN @ STEP 8: attachListeners threw', { error: msg });
-        return;
-      }
-
-      if (this.currentToken) {
-        pushLog('STEP 9: cached token present, re-saving', { tokenLength: this.currentToken.length });
-        try {
-          await this.saveToken(userId, this.currentToken);
-          pushLog('STEP 9: cached token re-saved');
-        } catch (e) {
-          pushLog('STEP 9: cached token save failed (continuing)', { error: (e as Error).message });
-        }
-      } else {
-        pushLog('STEP 9: no cached token, proceed to register');
-      }
-
-      try {
-        pushDiag.earlyReturnReason = null;
-        pushLog('STEP 10: BEFORE PushNotifications.register()', {
-          userId,
-          listenersAttached: this.listenersAttached,
-          permission: pushDiag.lastPermissionState,
+        pushLog(`${invocationId} RETURN permission not granted`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          receive: perm.receive,
         });
-        await Push.register();
-        pushDiag.registerCalled = true;
-        pushDiag.registerCallError = null;
-        pushLog('STEP 10: AFTER PushNotifications.register() — awaiting registration event');
-      } catch (e) {
-        const msg = (e as Error).message;
-        pushDiag.registerCallError = msg;
-        pushDiag.earlyReturnReason = msg;
-        pushLog('STEP 10: register() threw', { error: msg });
+        return;
       }
+
+      pushDiag.registerCalled = true;
+      pushLog(`${invocationId} BEFORE await Push.register()`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+        permission: perm.receive,
+      });
+      const registerWatchdog = setTimeout(() => {
+        pushLog(`${invocationId} WATCHDOG Push.register pending after 10000ms`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+      }, 10000);
+      await Push.register();
+      clearTimeout(registerWatchdog);
+      pushLog(`${invocationId} AFTER await Push.register()`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+
+      pushLog(`${invocationId} BEFORE await registration token`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+      const tokenWaitWatchdog = setTimeout(() => {
+        pushLog(`${invocationId} WATCHDOG registration token pending after 15000ms`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+      }, 15000);
+      const token = await Promise.race([
+        tokenPromise,
+        new Promise<string>((_, reject) => {
+          setTimeout(() => reject(new Error('Timed out waiting for registration token')), 15000);
+        }),
+      ]);
+      clearTimeout(tokenWaitWatchdog);
+      pushLog(`${invocationId} AFTER await registration token`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+        tokenLength: token.length,
+      });
+
+      pushLog(`${invocationId} BEFORE await saveToken()`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+        tokenLength: token.length,
+      });
+      await this.saveToken(userId, token, invocationId);
+      pushLog(`${invocationId} AFTER await saveToken()`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+
+      pushLog(`${invocationId} RETURN success`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
     } catch (e) {
-      const msg = (e as Error).message;
-      pushDiag.registerCallError = 'unexpected: ' + msg;
-      pushDiag.earlyReturnReason = pushDiag.registerCallError;
-      pushLog('UNEXPECTED outer catch in registerForUser', { error: msg });
+      const err = e as Error;
+      const message = err?.message || String(e);
+      const stack = err?.stack || '(no stack)';
+      pushDiag.registerCallError = message;
+      pushDiag.earlyReturnReason = message;
+      pushLog(`${invocationId} THROW registerForUser`, {
+        activeInvocationCount: activeRegisterInvocationCount,
+        error: message,
+        stack,
+      });
+      throw e;
+    } finally {
+      try {
+        if (registrationHandle?.remove) {
+          pushLog(`${invocationId} BEFORE await registrationHandle.remove()`, {
+            activeInvocationCount: activeRegisterInvocationCount,
+          });
+          await registrationHandle.remove();
+          pushLog(`${invocationId} AFTER await registrationHandle.remove()`, {
+            activeInvocationCount: activeRegisterInvocationCount,
+          });
+        }
+        if (registrationErrorHandle?.remove) {
+          pushLog(`${invocationId} BEFORE await registrationErrorHandle.remove()`, {
+            activeInvocationCount: activeRegisterInvocationCount,
+          });
+          await registrationErrorHandle.remove();
+          pushLog(`${invocationId} AFTER await registrationErrorHandle.remove()`, {
+            activeInvocationCount: activeRegisterInvocationCount,
+          });
+        }
+      } catch (e) {
+        const err = e as Error;
+        pushLog(`${invocationId} THROW during finally cleanup`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          error: err?.message || String(e),
+          stack: err?.stack || '(no stack)',
+        });
+      } finally {
+        pushDiag.listenersAttached = false;
+        activeRegisterInvocationCount = Math.max(0, activeRegisterInvocationCount - 1);
+        pushLog(`${invocationId} FINALLY registerForUser`, {
+          activeInvocationCount: activeRegisterInvocationCount,
+          earlyReturnReason: pushDiag.earlyReturnReason,
+          registerCallError: pushDiag.registerCallError,
+        });
+      }
     }
   }
 
   async forceReregister(userId: string): Promise<void> {
-    console.log('[push] forceReregister', userId);
-    this.currentUserId = userId;
-    this.currentToken = null;
-    pushDiag.registerCalled = false;
-    pushDiag.registrationEventFired = false;
-    pushDiag.registrationError = null;
-    pushDiag.lastDbUpsertError = null;
-    const Push = await loadPushPlugin();
-    if (!Push) {
-      pushDiag.registerCallError = 'plugin not loaded: ' + (pushDiag.pluginLoadError ?? 'unknown');
-      pushDiag.earlyReturnReason = pushDiag.registerCallError;
-      pushLog('forceReregister EARLY RETURN: plugin not loaded', { pluginLoadError: pushDiag.pluginLoadError });
-      console.warn('[push] forceReregister: plugin not loaded');
-      return;
-    }
-    // Make sure permission is granted before register()
-    try {
-      let perm = await Push.checkPermissions();
-      pushDiag.lastPermissionState = perm.receive;
-      if (perm.receive !== 'granted') {
-        try {
-          perm = await Push.requestPermissions();
-          pushDiag.lastPermissionState = perm.receive;
-        } catch (e) {
-          const msg = (e as Error).message;
-          pushDiag.registerCallError = 'requestPermissions failed: ' + msg;
-          pushDiag.earlyReturnReason = pushDiag.registerCallError;
-          pushLog('forceReregister EARLY RETURN: requestPermissions failed', { error: msg });
-          return;
-        }
-      }
-      if (perm.receive !== 'granted') {
-        pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
-        pushDiag.earlyReturnReason = pushDiag.registerCallError;
-        pushLog('forceReregister EARLY RETURN: permission not granted', { receive: perm.receive });
-        return;
-      }
-    } catch (e) {
-      pushDiag.registerCallError = 'perm check failed: ' + (e as Error).message;
-      pushDiag.earlyReturnReason = pushDiag.registerCallError;
-      pushLog('forceReregister EARLY RETURN: permission check failed', { error: (e as Error).message });
-      return;
-    }
-    await this.attachListeners(Push);
-    try {
-      pushDiag.registerCalled = true;
-      await Push.register();
-      console.log('[push] forceReregister: register() ok');
-    } catch (e) {
-      pushDiag.registerCallError = (e as Error).message;
-      console.warn('[push] forceReregister failed', e);
-    }
+    pushLog('forceReregister delegating to registerForUser', { userId, activeInvocationCount: activeRegisterInvocationCount });
+    return this.registerForUser(userId);
   }
 
   async unregisterForUser(userId: string): Promise<void> {
@@ -376,95 +471,35 @@ class NativePushService implements PushService {
     } catch (e) {
       console.warn('[push] unregister failed', e);
     }
-    if (this.currentUserId === userId) this.currentUserId = null;
   }
 
-  private async attachListeners(Push: PushPlugin) {
-    if (this.listenersAttached) return;
-    this.listenersAttached = true;
-    pushDiag.listenersAttached = true;
+  private async saveToken(userId: string, token: string, invocationId?: string) {
     try {
-      await Push.addListener('registration', async (token) => {
-        const len = token?.value?.length ?? 0;
-        pushLog('registration success token received', { tokenLength: len });
-        console.log('[push] registration event — token len:', len);
-        pushDiag.registrationEventFired = true;
-        pushDiag.lastTokenLength = len;
-        pushDiag.lastTokenAt = new Date().toISOString();
-        this.currentToken = token.value;
-        const uid = this.currentUserId;
-        if (!uid) {
-          console.warn('[push] got token but no currentUserId — will retry on auth');
-          return;
-        }
-        await this.saveToken(uid, token.value);
-      });
-      await Push.addListener('registrationError', (err) => {
-        const msg = JSON.stringify(err);
-        pushLog('registrationError listener fired', { error: msg });
-        console.warn('[push] registrationError', err);
-        pushDiag.registrationError = msg;
-      });
-      await Push.addListener('pushNotificationReceived', (notification) => {
-        console.log('[push] notification received in foreground', notification);
-        // Silent location refresh push: data-only, събужда устройството за да
-        // прати свежи координати без UI на потребителя.
-        const data = notification.data || {};
-        if (data.type === 'location_refresh') {
-          void handleLocationRefreshPush();
-          return;
-        }
-        void notifications.notify({
-          title: notification.title || 'Ново съобщение',
-          body: notification.body,
-        });
-        // Ако payload-ът носи unread_count → синхронизирай badge-а веднага,
-        // за да не чакаме realtime + useMessages да обновят бройката.
-        const raw = data.unread_count;
-        const n = typeof raw === 'string' ? parseInt(raw, 10) : Number(raw);
-        if (Number.isFinite(n) && n >= 0) {
-          void import('./appBadge').then(({ setAppBadge }) => setAppBadge(n)).catch(() => {});
-        }
-      });
-      // pushNotificationActionPerformed → когато iOS събуди приложението от
-      // silent push, понякога идва тук вместо в foreground listener-а.
-      await Push.addListener('pushNotificationActionPerformed', (action) => {
-        const data = action?.notification?.data || {};
-        if (data.type === 'location_refresh') {
-          void handleLocationRefreshPush();
-        }
-      });
-    } catch (e) {
-      pushDiag.earlyReturnReason = 'attachListeners failed: ' + (e as Error).message;
-      pushLog('attachListeners failed', { error: (e as Error).message });
-      console.warn('[push] attachListeners failed', e);
-      this.listenersAttached = false;
-      pushDiag.listenersAttached = false;
-    }
-  }
-
-  private async saveToken(userId: string, token: string) {
-    try {
-      // Ensure session is present (RLS needs auth.uid()).
-      // На Android registration event може да дойде секунди преди auth state да се стабилизира.
       let session = null;
       for (let attempt = 0; attempt < 5; attempt += 1) {
+        pushLog(`${invocationId ?? 'push-save'} BEFORE await supabase.auth.getSession()`, { attempt });
         const { data } = await supabase.auth.getSession();
+        pushLog(`${invocationId ?? 'push-save'} AFTER await supabase.auth.getSession()`, {
+          attempt,
+          hasSession: !!data.session,
+        });
         session = data.session;
         if (session) break;
+        pushLog(`${invocationId ?? 'push-save'} BEFORE await sleep(300)`, { attempt });
         await sleep(300);
+        pushLog(`${invocationId ?? 'push-save'} AFTER await sleep(300)`, { attempt });
       }
       if (!session) {
         const msg = 'no auth session — cannot upsert token';
         console.warn('[push]', msg);
         pushDiag.lastDbUpsertError = msg;
+        pushLog(`${invocationId ?? 'push-save'} RETURN no auth session`, { userId });
         return;
       }
       const deviceId = await getDeviceIdAsync();
       const platform = nativePlatform();
       const platformValue = platform === 'web' ? 'android' : platform;
-      pushLog('token upload start', { userId, deviceId, platform: platformValue, tokenLength: token.length });
-      console.log('[push] saveToken upsert', { userId, deviceId, platform: platformValue, tokenLen: token.length });
+      pushLog(`${invocationId ?? 'push-save'} token upload start`, { userId, deviceId, platform: platformValue, tokenLength: token.length });
       const { error } = await supabase
         .from('push_tokens')
         .upsert(
@@ -479,19 +514,20 @@ class NativePushService implements PushService {
         );
       pushDiag.lastDbUpsertAt = new Date().toISOString();
       if (error) {
-        pushLog('token upload error', { code: error.code ?? null, message: error.message });
+        pushLog(`${invocationId ?? 'push-save'} token upload error`, { code: error.code ?? null, message: error.message });
         console.error('[push] saveToken DB error', error);
         pushDiag.lastDbUpsertError = `${error.code || ''} ${error.message}`;
       } else {
         pushDiag.lastDbUpsertError = null;
-        pushLog('token upload success', { userId, deviceId, platform: platformValue });
-        console.log('[push] saveToken OK');
+        pushLog(`${invocationId ?? 'push-save'} token upload success`, { userId, deviceId, platform: platformValue });
       }
     } catch (e) {
-      const msg = (e as Error).message;
-      pushLog('token upload exception', { error: msg });
+      const err = e as Error;
+      const msg = err?.message || String(e);
+      pushLog(`${invocationId ?? 'push-save'} token upload exception`, { error: msg, stack: err?.stack || '(no stack)' });
       console.warn('[push] saveToken failed', e);
       pushDiag.lastDbUpsertError = msg;
+      throw e;
     }
   }
 }
@@ -518,91 +554,68 @@ export const push: PushService = {
   },
 };
 
-// ---------- Auth-state глобален hook ----------
-// Deferred: изпълнява се след първия render, за да не може ранна грешка
-// от push pipeline-а да блокира mount на React дървото.
-let authPushBridgeInitialized = false;
-
-function initAuthPushBridge() {
-  if (authPushBridgeInitialized) return;
-  authPushBridgeInitialized = true;
-  pushDiag.lifecycleStarted = true;
-  let lastUserId: string | null = null;
-
-  pushLog('initAuthPushBridge start', {
-    nativeDetected: isNative(),
-    platform: nativePlatform(),
-    pushEnabled: PUSH_ENABLED,
-  });
-
-  supabase.auth.getSession()
-    .then(({ data }) => {
-      const uid = data.session?.user?.id ?? null;
-      pushLog('initial auth session resolved', { hasUser: !!uid, userId: uid });
-      if (uid) {
-        lastUserId = uid;
-        void push.registerForUser(uid);
-      }
-    })
-    .catch((e) => console.warn('[push] getSession failed', e));
-
-  try {
-    supabase.auth.onAuthStateChange((event, session) => {
-      pushLog('auth state change observed', { event, hasUser: !!session?.user?.id });
-      console.log('[push] auth state change', event, !!session?.user?.id);
-      try {
-        const uid = session?.user?.id ?? null;
-        if (event === 'SIGNED_OUT' || !uid) {
-          if (lastUserId) {
-            void push.unregisterForUser(lastUserId);
-            lastUserId = null;
-          }
-          return;
-        }
-        if (uid !== lastUserId) {
-          const prev = lastUserId;
-          lastUserId = uid;
-          if (prev) void push.unregisterForUser(prev);
-          // Малко забавяне → изчакваме session/profile да се стабилизират
-          setTimeout(() => { void push.registerForUser(uid); }, 800);
-        }
-      } catch (e) {
-        console.warn('[push] auth listener error', e);
-      }
-    });
-  } catch (e) {
-    console.warn('[push] onAuthStateChange subscribe failed', e);
-  }
-}
-
+// ---------- Push startup (linear debug path) ----------
 export function ensurePushLifecycleStarted() {
   if (typeof window === 'undefined') return;
-  pushLog('ensurePushLifecycleStarted called', {
+
+  pushDiag.lifecycleStarted = true;
+  pushLog('ensurePushLifecycleStarted ENTER', {
     nativeDetected: isNative(),
     platform: nativePlatform(),
     pushEnabled: PUSH_ENABLED,
     disableFlag: import.meta.env.VITE_DISABLE_PUSH ?? null,
+    activeInvocationCount: activeRegisterInvocationCount,
   });
+
   if (!isNative()) {
     pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted skipped: not native';
-    pushLog('EARLY RETURN: ensurePushLifecycleStarted skipped because platform is not native');
+    pushLog('ensurePushLifecycleStarted RETURN not native', {
+      activeInvocationCount: activeRegisterInvocationCount,
+    });
     return;
   }
+
   if (PUSH_DISABLED) {
     pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted skipped: push disabled';
-    pushLog('EARLY RETURN: ensurePushLifecycleStarted skipped because push is disabled');
+    pushLog('ensurePushLifecycleStarted RETURN push disabled', {
+      activeInvocationCount: activeRegisterInvocationCount,
+    });
     return;
   }
-  initAuthPushBridge();
-}
 
-if (typeof window !== 'undefined') {
-  // Backup auto-start за случаите, в които модулът е зареден преди React mount.
-  const scheduleStart = typeof queueMicrotask === 'function'
-    ? queueMicrotask
-    : (callback: () => void) => window.setTimeout(callback, 0);
-
-  scheduleStart(() => {
-    ensurePushLifecycleStarted();
+  pushLog('ensurePushLifecycleStarted BEFORE await supabase.auth.getSession()', {
+    activeInvocationCount: activeRegisterInvocationCount,
   });
+  void supabase.auth.getSession()
+    .then(({ data }) => {
+      const uid = data.session?.user?.id ?? null;
+      pushLog('ensurePushLifecycleStarted AFTER await supabase.auth.getSession()', {
+        activeInvocationCount: activeRegisterInvocationCount,
+        hasUser: !!uid,
+        userId: uid,
+      });
+      if (!uid) {
+        pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted: no authenticated user';
+        pushLog('ensurePushLifecycleStarted RETURN no authenticated user', {
+          activeInvocationCount: activeRegisterInvocationCount,
+        });
+        return;
+      }
+      void push.registerForUser(uid).catch((e) => {
+        const err = e as Error;
+        pushLog('ensurePushLifecycleStarted registerForUser rejected', {
+          activeInvocationCount: activeRegisterInvocationCount,
+          error: err?.message || String(e),
+          stack: err?.stack || '(no stack)',
+        });
+      });
+    })
+    .catch((e) => {
+      const err = e as Error;
+      pushLog('ensurePushLifecycleStarted THROW getSession', {
+        activeInvocationCount: activeRegisterInvocationCount,
+        error: err?.message || String(e),
+        stack: err?.stack || '(no stack)',
+      });
+    });
 }
