@@ -1,48 +1,46 @@
 #!/usr/bin/env bash
 #
-# Идемпотентен patcher, който apply-ва Google Services Gradle plugin-а и
-# гарантира експлицитна Firebase инициализация в MainActivity.
+# Идемпотентен patcher за Android Firebase инициализация.
+# Работи и в CI, и локално (извикан от `npm run android:prepare`).
 #
-# Без това Push.register() crash-ва с:
+# Поправя crash:
 #   "Default FirebaseApp is not initialized in this process"
-# защото `google-services.json` не се обработва от build системата ако
-# плъгинът не е apply-нат, а в редки случаи (Xiaomi/MIUI, custom Application
-# class) auto-init на Firebase не се случва навреме.
+# при PushNotifications.register().
 #
-# Извиква се ПОСЛЕ `npx cap sync android` и ПРЕДИ Gradle build.
-# Безопасно е да се пуска многократно.
-#
-# Какво прави:
-#   1. Добавя classpath 'com.google.gms:google-services:4.4.2' в
-#      android/build.gradle.
-#   2. Добавя apply plugin: 'com.google.gms.google-services' в
-#      android/app/build.gradle (директен apply, не conditional).
-#   3. Добавя firebase-bom + firebase-messaging dependencies.
-#   4. Patch-ва MainActivity.java с explicit FirebaseApp.initializeApp(this).
-#   5. Verify-ва, че android/app/google-services.json съществува.
+# Какво прави (всяка стъпка с verify, fail при несъответствие):
+#   1. Проверява android/app/google-services.json
+#   2. classpath 'com.google.gms:google-services:4.4.2' в android/build.gradle
+#   3. apply plugin: 'com.google.gms.google-services' в android/app/build.gradle
+#   4. firebase-bom + firebase-messaging dependencies
+#   5. Създава MyApplication.java (с правилния package), който в onCreate()
+#      извиква FirebaseApp.initializeApp(this) — гарантирано преди MainActivity.
+#   6. Добавя android:name=".MyApplication" в AndroidManifest <application>
+#   7. Запазва FirebaseApp.initializeApp(this) и в MainActivity като защитна
+#      мрежа (idempotent — no-op при втори call).
 
 set -euo pipefail
 
 PROJECT_GRADLE="android/build.gradle"
 APP_GRADLE="android/app/build.gradle"
 GS_JSON="android/app/google-services.json"
+MANIFEST="android/app/src/main/AndroidManifest.xml"
 
-if [ ! -f "$PROJECT_GRADLE" ] || [ ! -f "$APP_GRADLE" ]; then
-  echo "❌ Android Gradle files not found. Run 'npx cap add android' / 'npx cap sync android' first."
-  exit 1
-fi
+fail() { echo "❌ $1"; exit 1; }
 
-echo "🔧 Patching Firebase / google-services Gradle config"
+[ -f "$PROJECT_GRADLE" ] || fail "$PROJECT_GRADLE липсва. Пусни 'npx cap add android' / 'npx cap sync android' първо."
+[ -f "$APP_GRADLE" ]     || fail "$APP_GRADLE липсва."
+[ -f "$MANIFEST" ]       || fail "$MANIFEST липсва."
 
-# 0. google-services.json sanity check (рано — ако липсва, не пипай нищо)
-if [ ! -s "$GS_JSON" ]; then
-  echo "❌ $GS_JSON липсва или е празен. Прекъсвам преди да съм пипнал Gradle."
-  exit 1
-else
-  echo "  ✅ google-services.json присъства ($(wc -c < "$GS_JSON") bytes)"
-fi
+echo "🔧 Patching Android Firebase config"
 
-# 1. Project-level classpath
+# 1. google-services.json
+[ -s "$GS_JSON" ] || fail "$GS_JSON липсва или е празен. За локален build:
+   - Свали google-services.json от Firebase Console
+   - Сложи го на път: $GS_JSON
+   - Пусни отново: npm run android:prepare"
+echo "  ✅ google-services.json присъства ($(wc -c < "$GS_JSON") bytes)"
+
+# 2. Project-level classpath
 if ! grep -q "com.google.gms:google-services" "$PROJECT_GRADLE"; then
   if grep -q "classpath " "$PROJECT_GRADLE"; then
     awk '
@@ -54,28 +52,24 @@ if ! grep -q "com.google.gms:google-services" "$PROJECT_GRADLE"; then
       }
       { print }
     ' "$PROJECT_GRADLE" > "$PROJECT_GRADLE.tmp" && mv "$PROJECT_GRADLE.tmp" "$PROJECT_GRADLE"
-    echo "  + classpath com.google.gms:google-services:4.4.2"
   else
-    echo "  ⚠️  Не намерих съществуващ 'classpath ' ред в $PROJECT_GRADLE — пропускам."
+    fail "Не намерих 'classpath ' ред в $PROJECT_GRADLE — нестандартна структура."
   fi
-else
-  echo "  = classpath com.google.gms:google-services вече присъства"
 fi
+grep -q "com.google.gms:google-services" "$PROJECT_GRADLE" \
+  || fail "classpath google-services не беше добавен в $PROJECT_GRADLE."
+echo "  ✅ classpath com.google.gms:google-services:4.4.2"
 
-# 2. App-level apply plugin (директен apply най-долу — без if/conditional блок)
-if grep -q "com.google.gms.google-services" "$APP_GRADLE"; then
-  echo "  = apply plugin: com.google.gms.google-services вече присъства"
-else
+# 3. App-level apply plugin (директен apply най-долу)
+if ! grep -q "com.google.gms.google-services" "$APP_GRADLE"; then
   printf "\napply plugin: 'com.google.gms.google-services'\n" >> "$APP_GRADLE"
-  echo "  + apply plugin: com.google.gms.google-services"
 fi
+grep -q "com.google.gms.google-services" "$APP_GRADLE" \
+  || fail "apply plugin google-services не беше добавен в $APP_GRADLE."
+echo "  ✅ apply plugin: com.google.gms.google-services"
 
-# 3. Firebase BOM + messaging dependencies (вмъкнати в съществуващия dependencies { } блок)
-if grep -q "firebase-bom" "$APP_GRADLE"; then
-  echo "  = firebase-bom вече присъства"
-else
-  # Намери последния '}' на dependencies { ... } блока и вмъкни преди него.
-  # По-лесно: вмъкни след първия 'dependencies {' ред.
+# 4. Firebase BOM + messaging
+if ! grep -q "firebase-bom" "$APP_GRADLE"; then
   awk '
     /^dependencies[[:space:]]*\{/ && !done {
       print
@@ -86,60 +80,92 @@ else
     }
     { print }
   ' "$APP_GRADLE" > "$APP_GRADLE.tmp" && mv "$APP_GRADLE.tmp" "$APP_GRADLE"
-  echo "  + firebase-bom:33.7.0 + firebase-messaging"
 fi
+grep -q "firebase-bom" "$APP_GRADLE" \
+  || fail "firebase-bom dependency не беше добавен в $APP_GRADLE."
+grep -q "firebase-messaging" "$APP_GRADLE" \
+  || fail "firebase-messaging dependency не беше добавен в $APP_GRADLE."
+echo "  ✅ firebase-bom:33.7.0 + firebase-messaging"
 
-# 4. Explicit FirebaseApp.initializeApp(this) в MainActivity.java
+# 5. MyApplication.java — извличаме package от MainActivity
 MAIN_ACTIVITY=$(find android/app/src/main/java -name "MainActivity.java" | head -n1 || true)
-if [ -z "$MAIN_ACTIVITY" ] || [ ! -f "$MAIN_ACTIVITY" ]; then
-  echo "  ⚠️  MainActivity.java не намерен — пропускам explicit Firebase init."
+[ -n "$MAIN_ACTIVITY" ] && [ -f "$MAIN_ACTIVITY" ] \
+  || fail "MainActivity.java не намерен в android/app/src/main/java/."
+
+PKG=$(grep -E '^package ' "$MAIN_ACTIVITY" | head -n1 | sed -E 's/^package[[:space:]]+([^;]+);.*/\1/')
+[ -n "$PKG" ] || fail "Не успях да extract-на package от $MAIN_ACTIVITY."
+
+APP_DIR=$(dirname "$MAIN_ACTIVITY")
+MY_APP="$APP_DIR/MyApplication.java"
+
+cat > "$MY_APP" <<EOF
+package $PKG;
+
+import android.app.Application;
+import android.util.Log;
+import com.google.firebase.FirebaseApp;
+
+/**
+ * Custom Application клас — гарантира, че FirebaseApp.initializeApp(this) е
+ * извикан ПРЕДИ MainActivity, services и Capacitor plugins.
+ *
+ * Без това PushNotifications.register() crash-ва с
+ * "Default FirebaseApp is not initialized in this process".
+ *
+ * Auto-генериран от scripts/patch-android-firebase.sh.
+ */
+public class MyApplication extends Application {
+    private static final String TAG = "MyApplication";
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        try {
+            FirebaseApp.initializeApp(this);
+            Log.i(TAG, "FirebaseApp.initializeApp(this) OK");
+        } catch (Throwable t) {
+            Log.e(TAG, "FirebaseApp.initializeApp failed", t);
+        }
+    }
+}
+EOF
+[ -f "$MY_APP" ] || fail "MyApplication.java не беше създаден."
+echo "  ✅ MyApplication.java ($PKG)"
+
+# 6. android:name=".MyApplication" в AndroidManifest <application>
+if grep -q 'android:name=".MyApplication"' "$MANIFEST"; then
+  echo "  = android:name=\".MyApplication\" вече в AndroidManifest"
+elif grep -qE '<application[^>]*android:name=' "$MANIFEST"; then
+  fail "<application> вече има друг android:name. Премахни го ръчно или поправи скрипта."
 else
-  if grep -q "FirebaseApp.initializeApp" "$MAIN_ACTIVITY"; then
-    echo "  = FirebaseApp.initializeApp вече присъства в MainActivity"
-  else
-    # Добави import com.google.firebase.FirebaseApp; ако липсва
-    if ! grep -q "com.google.firebase.FirebaseApp" "$MAIN_ACTIVITY"; then
-      sed -i.bak 's|^package \(.*\);|package \1;\n\nimport com.google.firebase.FirebaseApp;|' "$MAIN_ACTIVITY"
-    fi
-
-    # Ако има onCreate — добави FirebaseApp.initializeApp(this); след super.onCreate(...);
-    if grep -q "super.onCreate" "$MAIN_ACTIVITY"; then
-      awk '
-        /super\.onCreate/ && !done {
-          print
-          print "        FirebaseApp.initializeApp(this);"
-          done=1
-          next
-        }
-        { print }
-      ' "$MAIN_ACTIVITY" > "$MAIN_ACTIVITY.tmp" && mv "$MAIN_ACTIVITY.tmp" "$MAIN_ACTIVITY"
-    else
-      # Inject цял onCreate метод преди последния `}` на класа.
-      # Намери последния `}` и вмъкни преди него.
-      awk '
-        { lines[NR] = $0 }
-        END {
-          # Намери последния `}`
-          last_brace = 0
-          for (i = NR; i >= 1; i--) {
-            if (lines[i] ~ /^}/) { last_brace = i; break }
-          }
-          for (i = 1; i <= NR; i++) {
-            if (i == last_brace) {
-              print "    @Override"
-              print "    public void onCreate(android.os.Bundle savedInstanceState) {"
-              print "        super.onCreate(savedInstanceState);"
-              print "        FirebaseApp.initializeApp(this);"
-              print "    }"
-            }
-            print lines[i]
-          }
-        }
-      ' "$MAIN_ACTIVITY" > "$MAIN_ACTIVITY.tmp" && mv "$MAIN_ACTIVITY.tmp" "$MAIN_ACTIVITY"
-    fi
-    rm -f "$MAIN_ACTIVITY.bak"
-    echo "  + FirebaseApp.initializeApp(this) в $MAIN_ACTIVITY"
-  fi
+  # Вмъкни android:name=".MyApplication" в <application ...> tag
+  sed -i.bak -E 's|<application |<application android:name=".MyApplication" |' "$MANIFEST"
+  rm -f "$MANIFEST.bak"
 fi
+grep -q 'android:name=".MyApplication"' "$MANIFEST" \
+  || fail "android:name=\".MyApplication\" не беше добавен в AndroidManifest."
+echo "  ✅ android:name=\".MyApplication\" в AndroidManifest"
 
-echo "✅ Firebase Gradle + native init patched."
+# 7. MainActivity safety net — FirebaseApp.initializeApp(this) и тук
+if ! grep -q "FirebaseApp.initializeApp" "$MAIN_ACTIVITY"; then
+  if ! grep -q "com.google.firebase.FirebaseApp" "$MAIN_ACTIVITY"; then
+    sed -i.bak "s|^package \(.*\);|package \1;\n\nimport com.google.firebase.FirebaseApp;|" "$MAIN_ACTIVITY"
+  fi
+  if grep -q "super.onCreate" "$MAIN_ACTIVITY"; then
+    awk '
+      /super\.onCreate/ && !done {
+        print
+        print "        FirebaseApp.initializeApp(this);"
+        done=1
+        next
+      }
+      { print }
+    ' "$MAIN_ACTIVITY" > "$MAIN_ACTIVITY.tmp" && mv "$MAIN_ACTIVITY.tmp" "$MAIN_ACTIVITY"
+  fi
+  rm -f "$MAIN_ACTIVITY.bak"
+fi
+echo "  ✅ MainActivity safety-net Firebase init"
+
+echo ""
+echo "✅ Android Firebase patch complete."
+echo "   Може да отвориш проекта с: npx cap open android"

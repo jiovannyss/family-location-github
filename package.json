@@ -14,7 +14,8 @@
     "mobile:build": "vite build && cap sync",
     "cap:sync": "cap sync",
     "cap:open:ios": "cap open ios",
-    "cap:open:android": "cap open android"
+    "cap:open:android": "cap open android",
+    "android:prepare": "bash scripts/android-prepare.sh"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
