@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Bug, RefreshCw, Send } from 'lucide-react';
+import { Bug, RefreshCw, Send, Bell, MapPin } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { isNative, nativePlatform } from '@/services/platform';
@@ -127,6 +127,25 @@ export default function PushDiagnostics() {
     }
   };
 
+  const [testingPush, setTestingPush] = useState<null | 'notification' | 'location_refresh'>(null);
+
+  const sendTest = async (mode: 'notification' | 'location_refresh') => {
+    if (!user) { toast.error('Няма влязъл потребител'); return; }
+    setTestingPush(mode);
+    try {
+      const { data, error } = await supabase.functions.invoke('test-push', { body: { mode } });
+      if (error) throw error;
+      const sent = (data as { sent?: number })?.sent ?? 0;
+      const total = (data as { total?: number })?.total ?? 0;
+      toast.success(`Изпратено: ${sent}/${total}. Виж logcat за "push received".`);
+      console.log('[diag] test-push result', data);
+    } catch (e) {
+      toast.error('Грешка: ' + (e as Error).message);
+    } finally {
+      setTestingPush(null);
+    }
+  };
+
   useEffect(() => { void load(); /* eslint-disable-next-line */ }, [user?.id]);
 
   return (
@@ -138,7 +157,13 @@ export default function PushDiagnostics() {
         <CardDescription>Помага за дебъг на известията</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="flex justify-end gap-2 mb-2">
+        <div className="flex flex-wrap justify-end gap-2 mb-2">
+          <Button size="sm" variant="outline" onClick={() => sendTest('notification')} disabled={!!testingPush || !user}>
+            <Bell className={`w-4 h-4 ${testingPush === 'notification' ? 'animate-pulse' : ''}`} /> Test push
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => sendTest('location_refresh')} disabled={!!testingPush || !user}>
+            <MapPin className={`w-4 h-4 ${testingPush === 'location_refresh' ? 'animate-pulse' : ''}`} /> Test location_refresh
+          </Button>
           <Button size="sm" variant="outline" onClick={reregister} disabled={reregistering || !user}>
             <Send className={`w-4 h-4 ${reregistering ? 'animate-pulse' : ''}`} /> Re-register
           </Button>

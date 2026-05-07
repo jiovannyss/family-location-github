@@ -32,12 +32,20 @@ function pushLog(message: string, details?: Record<string, unknown>) {
  * Извикан когато получим silent push с type=location_refresh.
  * Взема свежа локация и я качва — без да показва UI.
  */
-async function handleLocationRefreshPush() {
+async function handleLocationRefreshPush(source: string) {
+  pushLog('location_refresh handler START', { source });
   try {
     const { data } = await supabase.auth.getSession();
     const uid = data.session?.user?.id;
-    if (!uid) return;
+    if (!uid) {
+      pushLog('location_refresh handler ABORT no session');
+      return;
+    }
+    pushLog('location_refresh handler getCurrentPosition');
     const coords = await geolocation.getCurrentPosition();
+    pushLog('location_refresh handler GPS acquired', {
+      lat: coords.lat, lng: coords.lng, accuracy: coords.accuracy,
+    });
     await uploadLocationPoint({
       userId: uid,
       deviceId: getDeviceId(),
@@ -47,11 +55,51 @@ async function handleLocationRefreshPush() {
       recordedAt: new Date().toISOString(),
       devicePlatform: getDeviceInfo().platform,
     });
-    console.log('[push] location_refresh: uploaded fresh location');
+    pushLog('location_refresh handler DB updated', { uid });
   } catch (e) {
-    console.warn('[push] location_refresh failed', e);
+    pushLog('location_refresh handler FAILED', { error: (e as Error)?.message || String(e) });
   }
 }
+
+let deliveryListenersAttached = false;
+async function attachDeliveryListenersOnce() {
+  if (deliveryListenersAttached) return;
+  if (!isNative() || PUSH_DISABLED) return;
+  try {
+    const m = await import('@capacitor/push-notifications');
+    const Push = m?.PushNotifications;
+    if (!Push) return;
+    deliveryListenersAttached = true;
+    const appState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
+    pushLog('delivery listeners attaching', { appState });
+
+    await Push.addListener('pushNotificationReceived', (notif) => {
+      const data = (notif as { data?: Record<string, unknown> })?.data ?? {};
+      const fgState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
+      pushLog('push received', {
+        foregroundState: fgState,
+        title: (notif as { title?: string })?.title ?? null,
+        body: (notif as { body?: string })?.body ?? null,
+        data,
+      });
+      if (data?.type === 'location_refresh') {
+        void handleLocationRefreshPush('pushNotificationReceived');
+      }
+    });
+
+    await Push.addListener('pushNotificationActionPerformed', (action) => {
+      const data = (action as { notification?: { data?: Record<string, unknown> } })?.notification?.data ?? {};
+      pushLog('push action performed (tap)', { data });
+      if (data?.type === 'location_refresh') {
+        void handleLocationRefreshPush('pushNotificationActionPerformed');
+      }
+    });
+    pushLog('delivery listeners attached');
+  } catch (e) {
+    pushLog('delivery listeners attach failed', { error: (e as Error)?.message || String(e) });
+  }
+}
+
 
 const PUSH_ENABLED = isNative() && import.meta.env.VITE_DISABLE_PUSH !== 'true';
 const PUSH_DISABLED = !PUSH_ENABLED;
@@ -582,6 +630,7 @@ export async function ensurePushLifecycleStarted() {
   // ВАЖНО: винаги закачаме auth listener-а, дори ако getSession() върне null,
   // за да можем да retrigger-нем след successful login / session restore.
   attachAuthListenerOnce();
+  void attachDeliveryListenersOnce();
 
   pushLog('ensurePushLifecycleStarted BEFORE await supabase.auth.getSession()');
   try {
