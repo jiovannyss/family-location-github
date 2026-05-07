@@ -270,7 +270,7 @@ class NativePushService implements PushService {
         const err = e as Error;
         pushDiag.registerCallError = 'checkPermissions threw: ' + err?.message;
         pushDiag.earlyReturnReason = pushDiag.registerCallError;
-        pushLog('EARLY RETURN @ STEP 5: checkPermissions threw', { error: msg });
+        pushLog('EARLY RETURN @ STEP 5: checkPermissions threw', { error: err?.message, stack: err?.stack || '(no stack)' });
         return;
       }
       pushDiag.lastPermissionState = perm.receive;
