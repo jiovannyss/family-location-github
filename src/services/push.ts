@@ -152,64 +152,110 @@ class NativePushService implements PushService {
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
-    pushLog('registerForUser called', {
+    pushLog('STEP 1: registerForUser called', {
       userId,
       nativeDetected: isNative(),
       platform: nativePlatform(),
       pushEnabled: PUSH_ENABLED,
       disableFlag: import.meta.env.VITE_DISABLE_PUSH ?? null,
     });
+
+    pushLog('STEP 2: native platform check', { isNative: isNative(), platform: nativePlatform() });
     if (PUSH_DISABLED) {
       pushDiag.earlyReturnReason = 'push disabled by VITE_DISABLE_PUSH or non-native platform';
-      pushLog('EARLY RETURN: push disabled before registerForUser');
+      pushLog('EARLY RETURN @ STEP 2: PUSH_DISABLED', { pushEnabled: PUSH_ENABLED });
       return;
     }
+
+    pushLog('STEP 3: storing currentUserId', { userId });
     this.currentUserId = userId;
 
-    const Push = await loadPushPlugin();
+    pushLog('STEP 4: BEFORE loadPushPlugin()');
+    let Push: PushPlugin | null = null;
+    try {
+      Push = await loadPushPlugin();
+      pushLog('STEP 4: AFTER loadPushPlugin()', {
+        loaded: !!Push,
+        pluginLoadError: pushDiag.pluginLoadError,
+      });
+    } catch (e) {
+      const msg = (e as Error).message;
+      pushDiag.earlyReturnReason = 'loadPushPlugin threw: ' + msg;
+      pushLog('EARLY RETURN @ STEP 4: loadPushPlugin threw', { error: msg });
+      return;
+    }
     if (!Push) {
       pushDiag.earlyReturnReason = 'push plugin not loaded';
-      pushLog('EARLY RETURN: plugin not loaded', { pluginLoadError: pushDiag.pluginLoadError });
-      console.warn('[push] plugin not loaded');
+      pushLog('EARLY RETURN @ STEP 4: plugin null', { pluginLoadError: pushDiag.pluginLoadError });
       return;
     }
 
     try {
-      let perm = await Push.checkPermissions();
+      pushLog('STEP 5: BEFORE Push.checkPermissions()');
+      let perm: { receive: string };
+      try {
+        perm = await Push.checkPermissions();
+        pushLog('STEP 5: AFTER Push.checkPermissions()', { receive: perm.receive });
+      } catch (e) {
+        const msg = (e as Error).message;
+        pushDiag.registerCallError = 'checkPermissions threw: ' + msg;
+        pushDiag.earlyReturnReason = pushDiag.registerCallError;
+        pushLog('EARLY RETURN @ STEP 5: checkPermissions threw', { error: msg });
+        return;
+      }
       pushDiag.lastPermissionState = perm.receive;
-      pushLog('permission check completed', { receive: perm.receive });
+
       if (perm.receive !== 'granted') {
+        pushLog('STEP 6: BEFORE Push.requestPermissions()', { current: perm.receive });
         try {
           perm = await Push.requestPermissions();
           pushDiag.lastPermissionState = perm.receive;
-          pushLog('permission request completed', { receive: perm.receive });
+          pushLog('STEP 6: AFTER Push.requestPermissions()', { receive: perm.receive });
         } catch (e) {
-          console.warn('[push] requestPermissions failed', e);
-          pushDiag.registerCallError = 'requestPermissions failed: ' + (e as Error).message;
+          const msg = (e as Error).message;
+          pushDiag.registerCallError = 'requestPermissions failed: ' + msg;
           pushDiag.earlyReturnReason = pushDiag.registerCallError;
-          pushLog('EARLY RETURN: requestPermissions failed', { error: (e as Error).message });
+          pushLog('EARLY RETURN @ STEP 6: requestPermissions threw', { error: msg });
           return;
         }
+      } else {
+        pushLog('STEP 6: skipped — permission already granted');
       }
+
       if (perm.receive !== 'granted') {
-        console.warn('[push] permission not granted, abort');
         pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
         pushDiag.earlyReturnReason = pushDiag.registerCallError;
-        pushLog('EARLY RETURN: permission not granted', { receive: perm.receive });
+        pushLog('EARLY RETURN @ STEP 7: permission not granted after request', { receive: perm.receive });
+        return;
+      }
+      pushLog('STEP 7: permission granted confirmed');
+
+      pushLog('STEP 8: BEFORE attachListeners()');
+      try {
+        await this.attachListeners(Push);
+        pushLog('STEP 8: AFTER attachListeners()', { listenersAttached: this.listenersAttached });
+      } catch (e) {
+        const msg = (e as Error).message;
+        pushDiag.earlyReturnReason = 'attachListeners threw: ' + msg;
+        pushLog('EARLY RETURN @ STEP 8: attachListeners threw', { error: msg });
         return;
       }
 
-      // Attach listeners BEFORE register()
-      await this.attachListeners(Push);
-
       if (this.currentToken) {
-        console.log('[push] reusing cached token, re-saving');
-        await this.saveToken(userId, this.currentToken);
+        pushLog('STEP 9: cached token present, re-saving', { tokenLength: this.currentToken.length });
+        try {
+          await this.saveToken(userId, this.currentToken);
+          pushLog('STEP 9: cached token re-saved');
+        } catch (e) {
+          pushLog('STEP 9: cached token save failed (continuing)', { error: (e as Error).message });
+        }
+      } else {
+        pushLog('STEP 9: no cached token, proceed to register');
       }
 
       try {
         pushDiag.earlyReturnReason = null;
-        pushLog('BEFORE PushNotifications.register()', {
+        pushLog('STEP 10: BEFORE PushNotifications.register()', {
           userId,
           listenersAttached: this.listenersAttached,
           permission: pushDiag.lastPermissionState,
@@ -217,20 +263,18 @@ class NativePushService implements PushService {
         await Push.register();
         pushDiag.registerCalled = true;
         pushDiag.registerCallError = null;
-        pushLog('AFTER PushNotifications.register()');
-        console.log('[push] register() ok — waiting for registration event');
+        pushLog('STEP 10: AFTER PushNotifications.register() — awaiting registration event');
       } catch (e) {
         const msg = (e as Error).message;
         pushDiag.registerCallError = msg;
         pushDiag.earlyReturnReason = msg;
-        pushLog('register() threw error', { error: msg });
-        console.warn('[push] register failed', e);
+        pushLog('STEP 10: register() threw', { error: msg });
       }
     } catch (e) {
-      pushDiag.registerCallError = 'unexpected: ' + (e as Error).message;
+      const msg = (e as Error).message;
+      pushDiag.registerCallError = 'unexpected: ' + msg;
       pushDiag.earlyReturnReason = pushDiag.registerCallError;
-      pushLog('registerForUser unexpected error', { error: (e as Error).message });
-      console.warn('[push] registerForUser unexpected error', e);
+      pushLog('UNEXPECTED outer catch in registerForUser', { error: msg });
     }
   }
 
