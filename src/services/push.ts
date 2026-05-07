@@ -555,7 +555,7 @@ export const push: PushService = {
 };
 
 // ---------- Push startup (linear debug path) ----------
-export function ensurePushLifecycleStarted() {
+export async function ensurePushLifecycleStarted() {
   if (typeof window === 'undefined') return;
 
   pushDiag.lifecycleStarted = true;
@@ -586,36 +586,37 @@ export function ensurePushLifecycleStarted() {
   pushLog('ensurePushLifecycleStarted BEFORE await supabase.auth.getSession()', {
     activeInvocationCount: activeRegisterInvocationCount,
   });
-  void supabase.auth.getSession()
-    .then(({ data }) => {
-      const uid = data.session?.user?.id ?? null;
-      pushLog('ensurePushLifecycleStarted AFTER await supabase.auth.getSession()', {
-        activeInvocationCount: activeRegisterInvocationCount,
-        hasUser: !!uid,
-        userId: uid,
-      });
-      if (!uid) {
-        pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted: no authenticated user';
-        pushLog('ensurePushLifecycleStarted RETURN no authenticated user', {
-          activeInvocationCount: activeRegisterInvocationCount,
-        });
-        return;
-      }
-      void push.registerForUser(uid).catch((e) => {
-        const err = e as Error;
-        pushLog('ensurePushLifecycleStarted registerForUser rejected', {
-          activeInvocationCount: activeRegisterInvocationCount,
-          error: err?.message || String(e),
-          stack: err?.stack || '(no stack)',
-        });
-      });
-    })
-    .catch((e) => {
-      const err = e as Error;
-      pushLog('ensurePushLifecycleStarted THROW getSession', {
-        activeInvocationCount: activeRegisterInvocationCount,
-        error: err?.message || String(e),
-        stack: err?.stack || '(no stack)',
-      });
+  try {
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id ?? null;
+    pushLog('ensurePushLifecycleStarted AFTER await supabase.auth.getSession()', {
+      activeInvocationCount: activeRegisterInvocationCount,
+      hasUser: !!uid,
+      userId: uid,
     });
+    if (!uid) {
+      pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted: no authenticated user';
+      pushLog('ensurePushLifecycleStarted RETURN no authenticated user', {
+        activeInvocationCount: activeRegisterInvocationCount,
+      });
+      return;
+    }
+
+    pushLog('ensurePushLifecycleStarted BEFORE await push.registerForUser()', {
+      activeInvocationCount: activeRegisterInvocationCount,
+      userId: uid,
+    });
+    await push.registerForUser(uid);
+    pushLog('ensurePushLifecycleStarted AFTER await push.registerForUser()', {
+      activeInvocationCount: activeRegisterInvocationCount,
+      userId: uid,
+    });
+  } catch (e) {
+    const err = e as Error;
+    pushLog('ensurePushLifecycleStarted THROW', {
+      activeInvocationCount: activeRegisterInvocationCount,
+      error: err?.message || String(e),
+      stack: err?.stack || '(no stack)',
+    });
+  }
 }
