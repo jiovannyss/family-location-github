@@ -111,39 +111,6 @@ class NoopPushService implements PushService {
 
 // Lazy-loaded native plugin тип
 type PushPlugin = typeof import('@capacitor/push-notifications').PushNotifications;
-async function loadPushPlugin(): Promise<PushPlugin | null> {
-  pushLog('ENTER loadPushPlugin');
-  try {
-    const m = await import('@capacitor/push-notifications');
-    pushLog('IMPORT DONE', {
-      moduleType: typeof m,
-      moduleKeys: m ? Object.keys(m) : null,
-      hasPushNotifications: !!(m && (m as any).PushNotifications),
-      pushNotificationsType: m ? typeof (m as any).PushNotifications : null,
-    });
-
-    if (!m?.PushNotifications) {
-      pushDiag.pluginLoadError = 'PushNotifications export missing';
-      pushLog('loadPushPlugin missing export', { keys: m ? Object.keys(m) : null });
-      return null;
-    }
-
-    pushDiag.pluginLoadError = null;
-    pushLog('RETURNING INSTANCE', {
-      type: typeof m.PushNotifications,
-      methods: Object.keys(m.PushNotifications || {}),
-    });
-    return m.PushNotifications;
-  } catch (e) {
-    const err = e as Error;
-    const msg = err?.message || String(e);
-    const stack = err?.stack || '(no stack)';
-    pushDiag.pluginLoadError = 'loadPushPlugin failed: ' + msg;
-    pushLog('loadPushPlugin THREW', { error: msg, stack });
-    console.error('[push] loadPushPlugin failed', e);
-    return null;
-  }
-}
 
 let registerInvocationSeq = 0;
 let activeRegisterInvocationCount = 0;
@@ -223,32 +190,6 @@ class NativePushService implements PushService {
         return;
       }
       pushDiag.pluginLoadError = null;
-
-      const removeAllListenersType = typeof (Push as any).removeAllListeners;
-      pushLog(`${invocationId} STEP removeAllListeners type check`, {
-        activeInvocationCount: activeRegisterInvocationCount,
-        type: removeAllListenersType,
-      });
-      if (removeAllListenersType === 'function') {
-        pushLog(`${invocationId} BEFORE await Push.removeAllListeners()`, {
-          activeInvocationCount: activeRegisterInvocationCount,
-        });
-        const removeWatchdog = setTimeout(() => {
-          pushLog(`${invocationId} WATCHDOG removeAllListeners pending after 5000ms`, {
-            activeInvocationCount: activeRegisterInvocationCount,
-          });
-        }, 5000);
-        await Push.removeAllListeners();
-        clearTimeout(removeWatchdog);
-        pushLog(`${invocationId} AFTER await Push.removeAllListeners()`, {
-          activeInvocationCount: activeRegisterInvocationCount,
-        });
-      } else {
-        pushLog(`${invocationId} SKIP Push.removeAllListeners()`, {
-          activeInvocationCount: activeRegisterInvocationCount,
-          reason: 'method missing',
-        });
-      }
 
       let resolveToken!: (token: string) => void;
       let rejectToken!: (error: Error) => void;
