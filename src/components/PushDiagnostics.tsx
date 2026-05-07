@@ -13,6 +13,8 @@ interface Diag {
   pushEnabled: boolean;
   platform: string;
   isNative: boolean;
+  lifecycleStarted: boolean;
+  earlyReturnReason: string | null;
   permission: string;
   userId: string | null;
   deviceId: string;
@@ -44,7 +46,7 @@ export default function PushDiagnostics() {
   const load = async () => {
     setLoading(true);
     try {
-      const pushEnabled = import.meta.env.VITE_ENABLE_PUSH === 'true' || nativePlatform() === 'ios';
+      const pushEnabled = isNative() && import.meta.env.VITE_DISABLE_PUSH !== 'true';
       const deviceId = await getDeviceIdAsync();
       let permission = 'n/a';
       if (isNative() && pushEnabled) {
@@ -83,6 +85,8 @@ export default function PushDiagnostics() {
         pushEnabled,
         platform: nativePlatform(),
         isNative: isNative(),
+        lifecycleStarted: pushDiag.lifecycleStarted,
+        earlyReturnReason: pushDiag.earlyReturnReason,
         permission,
         userId: user?.id ?? null,
         deviceId,
