@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { isNative, nativePlatform } from '@/services/platform';
 import { getDeviceIdAsync } from '@/services/deviceId';
-import { push, pushDiag } from '@/services/push';
+import { push, pushDiag, ensurePushLifecycleStarted } from '@/services/push';
 import { toast } from 'sonner';
 
 interface Diag {
@@ -46,6 +46,7 @@ export default function PushDiagnostics() {
   const load = async () => {
     setLoading(true);
     try {
+      try { await ensurePushLifecycleStarted(); } catch (e) { console.warn('[diag] ensurePushLifecycleStarted', e); }
       const pushEnabled = isNative() && import.meta.env.VITE_DISABLE_PUSH !== 'true';
       const deviceId = await getDeviceIdAsync();
       let permission = 'n/a';

@@ -507,6 +507,54 @@ export const push: PushService = {
 };
 
 // ---------- Push startup (linear debug path) ----------
+let authListenerAttached = false;
+let lastRegisteredUserId: string | null = null;
+let inFlightUserId: string | null = null;
+
+async function triggerRegister(uid: string, reason: string) {
+  if (inFlightUserId === uid) {
+    pushLog('triggerRegister SKIP already in-flight', { uid, reason });
+    return;
+  }
+  if (lastRegisteredUserId === uid && pushDiag.lastTokenAt) {
+    pushLog('triggerRegister SKIP already registered for user', { uid, reason });
+    return;
+  }
+  inFlightUserId = uid;
+  pushLog('triggerRegister BEFORE registerForUser', { uid, reason });
+  try {
+    await push.registerForUser(uid);
+    lastRegisteredUserId = uid;
+    pushLog('triggerRegister AFTER registerForUser', { uid, reason });
+  } catch (e) {
+    const err = e as Error;
+    pushLog('triggerRegister THROW', { uid, reason, error: err?.message || String(e) });
+  } finally {
+    inFlightUserId = null;
+  }
+}
+
+function attachAuthListenerOnce() {
+  if (authListenerAttached) return;
+  authListenerAttached = true;
+  pushLog('attachAuthListenerOnce attaching onAuthStateChange');
+  supabase.auth.onAuthStateChange((event, session) => {
+    const uid = session?.user?.id ?? null;
+    pushLog('onAuthStateChange event', { event, hasUser: !!uid });
+    if (!uid) {
+      lastRegisteredUserId = null;
+      return;
+    }
+    if (event === 'SIGNED_IN') {
+      pushLog('login success -> starting push lifecycle', { uid });
+      void triggerRegister(uid, 'SIGNED_IN');
+    } else if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+      pushLog('session restored -> starting push lifecycle', { uid, event });
+      void triggerRegister(uid, event);
+    }
+  });
+}
+
 export async function ensurePushLifecycleStarted() {
   if (typeof window === 'undefined') return;
 
@@ -521,52 +569,39 @@ export async function ensurePushLifecycleStarted() {
 
   if (!isNative()) {
     pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted skipped: not native';
-    pushLog('ensurePushLifecycleStarted RETURN not native', {
-      activeInvocationCount: activeRegisterInvocationCount,
-    });
+    pushLog('ensurePushLifecycleStarted RETURN not native');
     return;
   }
 
   if (PUSH_DISABLED) {
     pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted skipped: push disabled';
-    pushLog('ensurePushLifecycleStarted RETURN push disabled', {
-      activeInvocationCount: activeRegisterInvocationCount,
-    });
+    pushLog('ensurePushLifecycleStarted RETURN push disabled');
     return;
   }
 
-  pushLog('ensurePushLifecycleStarted BEFORE await supabase.auth.getSession()', {
-    activeInvocationCount: activeRegisterInvocationCount,
-  });
+  // ВАЖНО: винаги закачаме auth listener-а, дори ако getSession() върне null,
+  // за да можем да retrigger-нем след successful login / session restore.
+  attachAuthListenerOnce();
+
+  pushLog('ensurePushLifecycleStarted BEFORE await supabase.auth.getSession()');
   try {
     const { data } = await supabase.auth.getSession();
     const uid = data.session?.user?.id ?? null;
     pushLog('ensurePushLifecycleStarted AFTER await supabase.auth.getSession()', {
-      activeInvocationCount: activeRegisterInvocationCount,
       hasUser: !!uid,
       userId: uid,
     });
     if (!uid) {
-      pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted: no authenticated user';
-      pushLog('ensurePushLifecycleStarted RETURN no authenticated user', {
-        activeInvocationCount: activeRegisterInvocationCount,
-      });
+      pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted: no authenticated user (waiting for auth event)';
+      pushLog('ensurePushLifecycleStarted RETURN no authenticated user — auth listener active');
       return;
     }
 
-    pushLog('ensurePushLifecycleStarted BEFORE await push.registerForUser()', {
-      activeInvocationCount: activeRegisterInvocationCount,
-      userId: uid,
-    });
-    await push.registerForUser(uid);
-    pushLog('ensurePushLifecycleStarted AFTER await push.registerForUser()', {
-      activeInvocationCount: activeRegisterInvocationCount,
-      userId: uid,
-    });
+    pushLog('session restored -> starting push lifecycle', { uid, source: 'getSession' });
+    await triggerRegister(uid, 'getSession');
   } catch (e) {
     const err = e as Error;
     pushLog('ensurePushLifecycleStarted THROW', {
-      activeInvocationCount: activeRegisterInvocationCount,
       error: err?.message || String(e),
       stack: err?.stack || '(no stack)',
     });
