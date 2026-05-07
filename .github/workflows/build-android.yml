@@ -122,6 +122,12 @@ jobs:
           fi
           echo "✅ google-services.json инсталиран в android/app/"
 
+      - name: Apply Google Services Gradle plugin (if push enabled)
+        if: ${{ inputs.enable_push == 'true' }}
+        run: |
+          chmod +x scripts/patch-android-firebase.sh
+          ./scripts/patch-android-firebase.sh
+
       - name: Generate native icons & splash from resources/
         run: |
           bunx @capacitor/assets generate \
