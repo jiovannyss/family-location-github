@@ -161,8 +161,13 @@ async function loadPushPlugin(): Promise<PushPlugin | null> {
         type: typeof m.PushNotifications,
         methods: Object.keys(m.PushNotifications || {}),
       });
-      return m.PushNotifications;
-    })().catch((e) => {
+      const pluginRef = m.PushNotifications;
+      pushLog('LPP-F2: pluginRef captured, about to return from IIFE', { hasRef: !!pluginRef });
+      return pluginRef;
+    })().then((v) => {
+      pushLog('LPP-Y: IIFE .then fired (promise resolved)', { hasValue: !!v });
+      return v;
+    }).catch((e) => {
       const err = e as Error;
       const msg = err?.message || String(e);
       const stack = err?.stack || '(no stack)';
