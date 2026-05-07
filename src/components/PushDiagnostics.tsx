@@ -46,6 +46,7 @@ export default function PushDiagnostics() {
   const load = async () => {
     setLoading(true);
     try {
+      try { await ensurePushLifecycleStarted(); } catch (e) { console.warn('[diag] ensurePushLifecycleStarted', e); }
       const pushEnabled = isNative() && import.meta.env.VITE_DISABLE_PUSH !== 'true';
       const deviceId = await getDeviceIdAsync();
       let permission = 'n/a';
