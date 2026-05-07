@@ -307,7 +307,18 @@ class NativePushService implements PushService {
           activeInvocationCount: activeRegisterInvocationCount,
         });
       }, 10000);
-      await Push.register();
+      // Emergency timeout: ако native FCM init гръмне (липсващ google-services
+      // plugin / Xiaomi MIUI block), Push.register() може да не resolve-не
+      // никога. Гарантираме, че JS flow-ът няма да виси индефинитно.
+      await Promise.race([
+        Push.register(),
+        new Promise<void>((_, reject) => {
+          setTimeout(
+            () => reject(new Error('Push.register() native timeout after 20000ms — възможен FCM/Firebase native crash')),
+            20000,
+          );
+        }),
+      ]);
       clearTimeout(registerWatchdog);
       pushLog(`${invocationId} AFTER await Push.register()`, {
         activeInvocationCount: activeRegisterInvocationCount,
