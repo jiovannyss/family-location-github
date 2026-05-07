@@ -20,6 +20,14 @@ import { uploadLocationPoint } from './locationUpload';
 import { getDeviceId } from './deviceId';
 import { getDeviceInfo } from './device';
 
+function pushLog(message: string, details?: Record<string, unknown>) {
+  if (details) {
+    console.log(`[push-flow] ${message}`, details);
+    return;
+  }
+  console.log(`[push-flow] ${message}`);
+}
+
 /**
  * Извикан когато получим silent push с type=location_refresh.
  * Взема свежа локация и я качва — без да показва UI.
@@ -45,17 +53,16 @@ async function handleLocationRefreshPush() {
   }
 }
 
-// Push е OPT-IN: на Android `PushNotifications.register()` хвърля native
-// Java exception, ако липсва `google-services.json` (FCM config). Този crash
-// става в Java thread и НЕ може да се хване от JS try/catch → процесът умира.
-// Затова push се активира само когато явно подадеш VITE_ENABLE_PUSH=true
-// (след като добавиш google-services.json в android/app/).
-const PUSH_ENABLED =
-  import.meta.env.VITE_ENABLE_PUSH === 'true' || nativePlatform() === 'ios';
+const PUSH_ENABLED = isNative() && import.meta.env.VITE_DISABLE_PUSH !== 'true';
 const PUSH_DISABLED = !PUSH_ENABLED;
 
 // ---------- Live diagnostics (read by PushDiagnostics UI) ----------
 export interface PushDiagState {
+  lifecycleStarted: boolean;
+  nativeDetected: boolean;
+  platform: string;
+  pushEnabled: boolean;
+  earlyReturnReason: string | null;
   registerCalled: boolean;
   registerCallError: string | null;
   registrationEventFired: boolean;
@@ -68,6 +75,11 @@ export interface PushDiagState {
   lastPermissionState: string | null;
 }
 export const pushDiag: PushDiagState & { pluginLoadError: string | null } = {
+  lifecycleStarted: false,
+  nativeDetected: isNative(),
+  platform: nativePlatform(),
+  pushEnabled: PUSH_ENABLED,
+  earlyReturnReason: null,
   registerCalled: false,
   registerCallError: null,
   registrationEventFired: false,
@@ -140,31 +152,50 @@ class NativePushService implements PushService {
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
-    console.log('[push] registerForUser called', { userId, PUSH_ENABLED });
-    if (PUSH_DISABLED) { console.info('[push] disabled — VITE_ENABLE_PUSH != true'); return; }
+    pushLog('registerForUser called', {
+      userId,
+      nativeDetected: isNative(),
+      platform: nativePlatform(),
+      pushEnabled: PUSH_ENABLED,
+      disableFlag: import.meta.env.VITE_DISABLE_PUSH ?? null,
+    });
+    if (PUSH_DISABLED) {
+      pushDiag.earlyReturnReason = 'push disabled by VITE_DISABLE_PUSH or non-native platform';
+      pushLog('EARLY RETURN: push disabled before registerForUser');
+      return;
+    }
     this.currentUserId = userId;
 
     const Push = await loadPushPlugin();
-    if (!Push) { console.warn('[push] plugin not loaded'); return; }
+    if (!Push) {
+      pushDiag.earlyReturnReason = 'push plugin not loaded';
+      pushLog('EARLY RETURN: plugin not loaded', { pluginLoadError: pushDiag.pluginLoadError });
+      console.warn('[push] plugin not loaded');
+      return;
+    }
 
     try {
       let perm = await Push.checkPermissions();
       pushDiag.lastPermissionState = perm.receive;
-      console.log('[push] checkPermissions →', perm);
+      pushLog('permission check completed', { receive: perm.receive });
       if (perm.receive !== 'granted') {
         try {
           perm = await Push.requestPermissions();
           pushDiag.lastPermissionState = perm.receive;
-          console.log('[push] requestPermissions →', perm);
+          pushLog('permission request completed', { receive: perm.receive });
         } catch (e) {
           console.warn('[push] requestPermissions failed', e);
           pushDiag.registerCallError = 'requestPermissions failed: ' + (e as Error).message;
+          pushDiag.earlyReturnReason = pushDiag.registerCallError;
+          pushLog('EARLY RETURN: requestPermissions failed', { error: (e as Error).message });
           return;
         }
       }
       if (perm.receive !== 'granted') {
         console.warn('[push] permission not granted, abort');
         pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
+        pushDiag.earlyReturnReason = pushDiag.registerCallError;
+        pushLog('EARLY RETURN: permission not granted', { receive: perm.receive });
         return;
       }
 
@@ -177,17 +208,28 @@ class NativePushService implements PushService {
       }
 
       try {
+        pushDiag.earlyReturnReason = null;
+        pushLog('BEFORE PushNotifications.register()', {
+          userId,
+          listenersAttached: this.listenersAttached,
+          permission: pushDiag.lastPermissionState,
+        });
         await Push.register();
         pushDiag.registerCalled = true;
         pushDiag.registerCallError = null;
+        pushLog('AFTER PushNotifications.register()');
         console.log('[push] register() ok — waiting for registration event');
       } catch (e) {
         const msg = (e as Error).message;
         pushDiag.registerCallError = msg;
+        pushDiag.earlyReturnReason = msg;
+        pushLog('register() threw error', { error: msg });
         console.warn('[push] register failed', e);
       }
     } catch (e) {
       pushDiag.registerCallError = 'unexpected: ' + (e as Error).message;
+      pushDiag.earlyReturnReason = pushDiag.registerCallError;
+      pushLog('registerForUser unexpected error', { error: (e as Error).message });
       console.warn('[push] registerForUser unexpected error', e);
     }
   }
@@ -203,6 +245,8 @@ class NativePushService implements PushService {
     const Push = await loadPushPlugin();
     if (!Push) {
       pushDiag.registerCallError = 'plugin not loaded: ' + (pushDiag.pluginLoadError ?? 'unknown');
+      pushDiag.earlyReturnReason = pushDiag.registerCallError;
+      pushLog('forceReregister EARLY RETURN: plugin not loaded', { pluginLoadError: pushDiag.pluginLoadError });
       console.warn('[push] forceReregister: plugin not loaded');
       return;
     }
@@ -217,15 +261,21 @@ class NativePushService implements PushService {
         } catch (e) {
           const msg = (e as Error).message;
           pushDiag.registerCallError = 'requestPermissions failed: ' + msg;
+          pushDiag.earlyReturnReason = pushDiag.registerCallError;
+          pushLog('forceReregister EARLY RETURN: requestPermissions failed', { error: msg });
           return;
         }
       }
       if (perm.receive !== 'granted') {
         pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
+        pushDiag.earlyReturnReason = pushDiag.registerCallError;
+        pushLog('forceReregister EARLY RETURN: permission not granted', { receive: perm.receive });
         return;
       }
     } catch (e) {
       pushDiag.registerCallError = 'perm check failed: ' + (e as Error).message;
+      pushDiag.earlyReturnReason = pushDiag.registerCallError;
+      pushLog('forceReregister EARLY RETURN: permission check failed', { error: (e as Error).message });
       return;
     }
     await this.attachListeners(Push);
@@ -260,6 +310,7 @@ class NativePushService implements PushService {
     try {
       await Push.addListener('registration', async (token) => {
         const len = token?.value?.length ?? 0;
+        pushLog('registration success token received', { tokenLength: len });
         console.log('[push] registration event — token len:', len);
         pushDiag.registrationEventFired = true;
         pushDiag.lastTokenLength = len;
@@ -274,6 +325,7 @@ class NativePushService implements PushService {
       });
       await Push.addListener('registrationError', (err) => {
         const msg = JSON.stringify(err);
+        pushLog('registrationError listener fired', { error: msg });
         console.warn('[push] registrationError', err);
         pushDiag.registrationError = msg;
       });
@@ -307,6 +359,8 @@ class NativePushService implements PushService {
         }
       });
     } catch (e) {
+      pushDiag.earlyReturnReason = 'attachListeners failed: ' + (e as Error).message;
+      pushLog('attachListeners failed', { error: (e as Error).message });
       console.warn('[push] attachListeners failed', e);
       this.listenersAttached = false;
       pushDiag.listenersAttached = false;
@@ -333,6 +387,7 @@ class NativePushService implements PushService {
       const deviceId = await getDeviceIdAsync();
       const platform = nativePlatform();
       const platformValue = platform === 'web' ? 'android' : platform;
+      pushLog('token upload start', { userId, deviceId, platform: platformValue, tokenLength: token.length });
       console.log('[push] saveToken upsert', { userId, deviceId, platform: platformValue, tokenLen: token.length });
       const { error } = await supabase
         .from('push_tokens')
@@ -348,14 +403,17 @@ class NativePushService implements PushService {
         );
       pushDiag.lastDbUpsertAt = new Date().toISOString();
       if (error) {
+        pushLog('token upload error', { code: error.code ?? null, message: error.message });
         console.error('[push] saveToken DB error', error);
         pushDiag.lastDbUpsertError = `${error.code || ''} ${error.message}`;
       } else {
         pushDiag.lastDbUpsertError = null;
+        pushLog('token upload success', { userId, deviceId, platform: platformValue });
         console.log('[push] saveToken OK');
       }
     } catch (e) {
       const msg = (e as Error).message;
+      pushLog('token upload exception', { error: msg });
       console.warn('[push] saveToken failed', e);
       pushDiag.lastDbUpsertError = msg;
     }
@@ -392,11 +450,19 @@ let authPushBridgeInitialized = false;
 function initAuthPushBridge() {
   if (authPushBridgeInitialized) return;
   authPushBridgeInitialized = true;
+  pushDiag.lifecycleStarted = true;
   let lastUserId: string | null = null;
+
+  pushLog('initAuthPushBridge start', {
+    nativeDetected: isNative(),
+    platform: nativePlatform(),
+    pushEnabled: PUSH_ENABLED,
+  });
 
   supabase.auth.getSession()
     .then(({ data }) => {
       const uid = data.session?.user?.id ?? null;
+      pushLog('initial auth session resolved', { hasUser: !!uid, userId: uid });
       if (uid) {
         lastUserId = uid;
         void push.registerForUser(uid);
@@ -406,6 +472,7 @@ function initAuthPushBridge() {
 
   try {
     supabase.auth.onAuthStateChange((event, session) => {
+      pushLog('auth state change observed', { event, hasUser: !!session?.user?.id });
       console.log('[push] auth state change', event, !!session?.user?.id);
       try {
         const uid = session?.user?.id ?? null;
@@ -434,7 +501,22 @@ function initAuthPushBridge() {
 
 export function ensurePushLifecycleStarted() {
   if (typeof window === 'undefined') return;
-  if (!isNative() || PUSH_DISABLED) return;
+  pushLog('ensurePushLifecycleStarted called', {
+    nativeDetected: isNative(),
+    platform: nativePlatform(),
+    pushEnabled: PUSH_ENABLED,
+    disableFlag: import.meta.env.VITE_DISABLE_PUSH ?? null,
+  });
+  if (!isNative()) {
+    pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted skipped: not native';
+    pushLog('EARLY RETURN: ensurePushLifecycleStarted skipped because platform is not native');
+    return;
+  }
+  if (PUSH_DISABLED) {
+    pushDiag.earlyReturnReason = 'ensurePushLifecycleStarted skipped: push disabled';
+    pushLog('EARLY RETURN: ensurePushLifecycleStarted skipped because push is disabled');
+    return;
+  }
   initAuthPushBridge();
 }
 
