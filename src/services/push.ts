@@ -212,32 +212,63 @@ class NativePushService implements PushService {
     pushLog('STEP 4: BEFORE loadPushPlugin()');
     let Push: PushPlugin | null = null;
     try {
+      const watchdogs = [2000, 5000, 10000].map((ms) =>
+        setTimeout(() => pushLog(`STEP 4: WATCHDOG loadPushPlugin pending after ${ms}ms`), ms)
+      );
+      const loadStart = Date.now();
+      pushLog('STEP 4.1: awaiting loadPushPlugin()...');
       Push = await loadPushPlugin();
-      pushLog('STEP 4: AFTER loadPushPlugin()', {
+      watchdogs.forEach(clearTimeout);
+      pushLog('STEP 4.2: loadPushPlugin() resolved', {
+        elapsedMs: Date.now() - loadStart,
         loaded: !!Push,
+        pushType: typeof Push,
+        pushKeys: Push ? Object.keys(Push as any) : null,
         pluginLoadError: pushDiag.pluginLoadError,
       });
     } catch (e) {
-      const msg = (e as Error).message;
-      pushDiag.earlyReturnReason = 'loadPushPlugin threw: ' + msg;
-      pushLog('EARLY RETURN @ STEP 4: loadPushPlugin threw', { error: msg });
+      const err = e as Error;
+      pushDiag.earlyReturnReason = 'loadPushPlugin threw: ' + err?.message;
+      pushLog('EARLY RETURN @ STEP 4: loadPushPlugin threw', {
+        error: err?.message,
+        stack: err?.stack || '(no stack)',
+      });
       return;
     }
+    pushLog('STEP 4.3: post-await Push variable check', { hasPush: !!Push });
     if (!Push) {
       pushDiag.earlyReturnReason = 'push plugin not loaded';
       pushLog('EARLY RETURN @ STEP 4: plugin null', { pluginLoadError: pushDiag.pluginLoadError });
       return;
     }
+    pushLog('STEP 4.4: Push non-null, entering main try block');
 
     try {
+      pushLog('STEP 4.5: verifying checkPermissions method exists');
+      const checkPermsType = typeof (Push as any).checkPermissions;
+      pushLog('STEP 4.6: checkPermissions method type', { type: checkPermsType });
+      if (checkPermsType !== 'function') {
+        pushDiag.earlyReturnReason = 'checkPermissions is not a function: ' + checkPermsType;
+        pushLog('EARLY RETURN @ STEP 4.6: checkPermissions missing', { type: checkPermsType });
+        return;
+      }
       pushLog('STEP 5: BEFORE Push.checkPermissions()');
       let perm: { receive: string };
       try {
+        const cpStart = Date.now();
+        const cpWatchdog = setTimeout(
+          () => pushLog('STEP 5: WATCHDOG checkPermissions pending >3s'),
+          3000
+        );
         perm = await Push.checkPermissions();
-        pushLog('STEP 5: AFTER Push.checkPermissions()', { receive: perm.receive });
+        clearTimeout(cpWatchdog);
+        pushLog('STEP 5: AFTER Push.checkPermissions()', {
+          receive: perm?.receive,
+          elapsedMs: Date.now() - cpStart,
+        });
       } catch (e) {
-        const msg = (e as Error).message;
-        pushDiag.registerCallError = 'checkPermissions threw: ' + msg;
+        const err = e as Error;
+        pushDiag.registerCallError = 'checkPermissions threw: ' + err?.message;
         pushDiag.earlyReturnReason = pushDiag.registerCallError;
         pushLog('EARLY RETURN @ STEP 5: checkPermissions threw', { error: msg });
         return;
