@@ -114,34 +114,68 @@ type PushPlugin = typeof import('@capacitor/push-notifications').PushNotificatio
 let pushPluginPromise: Promise<PushPlugin | null> | null = null;
 async function loadPushPlugin(): Promise<PushPlugin | null> {
   if (!pushPluginPromise) {
+    pushLog('LPP-A: creating loadPushPlugin promise (first call)');
     pushPluginPromise = (async () => {
+      pushLog('LPP-B: entered IIFE, about to dynamic import @capacitor/push-notifications');
+      let m: typeof import('@capacitor/push-notifications') | null = null;
       try {
-        const m = await import('@capacitor/push-notifications');
-        if (!m?.PushNotifications) {
-          pushDiag.pluginLoadError = 'PushNotifications export missing';
-          console.warn('[push] PushNotifications export missing on module', Object.keys(m || {}));
-          return null;
-        }
-        // Sanity: проверка че plugin-ът е реално регистриран в native bridge
-        try {
-          await m.PushNotifications.checkPermissions();
-        } catch (e) {
-          const msg = (e as Error).message || String(e);
-          pushDiag.pluginLoadError = 'checkPermissions failed: ' + msg;
-          console.warn('[push] checkPermissions probe failed', e);
-          // Връщаме plugin-а въпреки това — register() може да даде по-точна грешка
-        }
-        pushDiag.pluginLoadError = null;
-        return m.PushNotifications;
+        m = await import('@capacitor/push-notifications');
+        pushLog('LPP-C: dynamic import resolved', {
+          moduleType: typeof m,
+          moduleKeys: m ? Object.keys(m) : null,
+          hasPushNotifications: !!(m && (m as any).PushNotifications),
+          pushNotificationsType: m ? typeof (m as any).PushNotifications : null,
+        });
       } catch (e) {
-        const msg = (e as Error).message || String(e);
-        console.warn('[push] plugin import failed', e);
-        pushDiag.pluginLoadError = msg;
+        const err = e as Error;
+        const msg = err?.message || String(e);
+        const stack = err?.stack || '(no stack)';
+        pushDiag.pluginLoadError = 'dynamic import threw: ' + msg;
+        pushLog('LPP-C: dynamic import THREW', { error: msg, stack });
+        console.error('[push] dynamic import failed', e);
         return null;
       }
-    })();
+
+      if (!m?.PushNotifications) {
+        pushDiag.pluginLoadError = 'PushNotifications export missing';
+        pushLog('LPP-D: PushNotifications export missing', { keys: m ? Object.keys(m) : null });
+        return null;
+      }
+      pushLog('LPP-D: PushNotifications export OK');
+
+      // Sanity probe: checkPermissions
+      pushLog('LPP-E: BEFORE sanity checkPermissions probe');
+      try {
+        const probe = await m.PushNotifications.checkPermissions();
+        pushLog('LPP-E: AFTER sanity checkPermissions probe', { receive: probe?.receive ?? null });
+      } catch (e) {
+        const err = e as Error;
+        const msg = err?.message || String(e);
+        const stack = err?.stack || '(no stack)';
+        pushDiag.pluginLoadError = 'checkPermissions probe failed: ' + msg;
+        pushLog('LPP-E: sanity checkPermissions THREW (continuing anyway)', { error: msg, stack });
+      }
+
+      pushDiag.pluginLoadError = null;
+      pushLog('LPP-F: returning PushNotifications plugin instance', {
+        type: typeof m.PushNotifications,
+        methods: Object.keys(m.PushNotifications || {}),
+      });
+      return m.PushNotifications;
+    })().catch((e) => {
+      const err = e as Error;
+      const msg = err?.message || String(e);
+      const stack = err?.stack || '(no stack)';
+      pushDiag.pluginLoadError = 'loadPushPlugin outer catch: ' + msg;
+      pushLog('LPP-X: outer promise rejection', { error: msg, stack });
+      return null;
+    });
+  } else {
+    pushLog('LPP-A: reusing existing loadPushPlugin promise');
   }
-  return pushPluginPromise;
+  const result = await pushPluginPromise;
+  pushLog('LPP-Z: loadPushPlugin awaited', { hasResult: !!result });
+  return result;
 }
 
 class NativePushService implements PushService {
