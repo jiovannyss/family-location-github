@@ -113,6 +113,28 @@ public class LocationRefreshForegroundService extends Service {
                 return START_NOT_STICKY;
             }
 
+            // Диагностика: логваме background-location и състояние на GPS providers,
+            // за да разберем защо Fused Location връща null при заключен екран.
+            boolean bgGranted = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                bgGranted = ContextCompat.checkSelfPermission(
+                        this, Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED;
+            }
+            boolean gpsEnabled = false;
+            boolean netEnabled = false;
+            try {
+                LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+                if (lm != null) {
+                    gpsEnabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+                    netEnabled = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "NATIVE provider check failed", t);
+            }
+            Log.i(TAG, "NATIVE perms bgLocation=" + bgGranted
+                    + " gpsProvider=" + gpsEnabled + " networkProvider=" + netEnabled);
+
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             String userId = prefs.getString(PREFS_USER, null);
             String deviceId = prefs.getString(PREFS_DEVICE, null);
