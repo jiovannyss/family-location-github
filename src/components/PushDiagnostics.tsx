@@ -179,6 +179,14 @@ export default function PushDiagnostics() {
         <pre className="text-xs bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
 {JSON.stringify(d, null, 2)}
         </pre>
+        {lastTestResult ? (
+          <div className="mt-3">
+            <div className="text-xs font-semibold mb-1">Last test-push result</div>
+            <pre className="text-xs bg-muted p-3 rounded overflow-x-auto whitespace-pre-wrap break-all">
+{JSON.stringify(lastTestResult, null, 2)}
+            </pre>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   );
