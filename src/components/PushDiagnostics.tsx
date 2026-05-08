@@ -128,6 +128,7 @@ export default function PushDiagnostics() {
   };
 
   const [testingPush, setTestingPush] = useState<null | 'notification' | 'location_refresh'>(null);
+  const [lastTestResult, setLastTestResult] = useState<unknown>(null);
 
   const sendTest = async (mode: 'notification' | 'location_refresh') => {
     if (!user) { toast.error('Няма влязъл потребител'); return; }
@@ -137,10 +138,14 @@ export default function PushDiagnostics() {
       if (error) throw error;
       const sent = (data as { sent?: number })?.sent ?? 0;
       const total = (data as { total?: number })?.total ?? 0;
-      toast.success(`Изпратено: ${sent}/${total}. Виж logcat за "push received".`);
+      const reason = (data as { reason?: string })?.reason;
+      setLastTestResult(data);
       console.log('[diag] test-push result', data);
+      if (sent > 0) toast.success(`Изпратено: ${sent}/${total}. Виж logcat за "push received".`);
+      else toast.error(`Изпратено: ${sent}/${total}${reason ? ' — ' + reason : ''}`);
     } catch (e) {
       toast.error('Грешка: ' + (e as Error).message);
+      setLastTestResult({ error: (e as Error).message });
     } finally {
       setTestingPush(null);
     }
