@@ -96,25 +96,35 @@ jobs:
           echo "📦 Налични Xcode инсталации:"
           ls -d /Applications/Xcode*.app 2>/dev/null || true
 
-          # Предпочитаме СТАБИЛЕН Xcode 26 (без 'beta') — beta версиите често
-          # нямат инсталирана съответната iOS platform/runtime на runner-а,
-          # което води до 'iOS X.Y is not installed'.
-          XCODE_STABLE="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -vi beta | sort -V | tail -n1 || true)"
+          # App Store отхвърля билдове, направени с beta Xcode (error 90534
+          # "Unsupported SDK or Xcode version"). Затова ВИНАГИ предпочитаме
+          # стабилен (non-beta) Xcode — първо 26.x, после най-новия наличен
+          # стабилен от която и да е версия. Beta се ползва само като
+          # последна резервна опция и с предупреждение.
+          XCODE_STABLE_26="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -vi beta | sort -V | tail -n1 || true)"
+          XCODE_STABLE_ANY="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -vi beta | sort -V | tail -n1 || true)"
+          XCODE_DEFAULT_APP="/Applications/Xcode.app"
           XCODE_ANY26="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n1 || true)"
 
           XCODE_APP=""
-          if [ -n "$XCODE_STABLE" ]; then
-            XCODE_APP="$XCODE_STABLE"
+          if [ -n "$XCODE_STABLE_26" ]; then
+            XCODE_APP="$XCODE_STABLE_26"
+          elif [ -n "$XCODE_STABLE_ANY" ]; then
+            XCODE_APP="$XCODE_STABLE_ANY"
+            echo "⚠️ Няма стабилен Xcode 26 — ползвам най-новия стабилен: $(basename "$XCODE_APP")"
+          elif [ -d "$XCODE_DEFAULT_APP" ]; then
+            XCODE_APP="$XCODE_DEFAULT_APP"
+            echo "ℹ️ Ползвам default /Applications/Xcode.app"
           elif [ -n "$XCODE_ANY26" ]; then
             XCODE_APP="$XCODE_ANY26"
-            echo "⚠️ Само beta Xcode 26 е наличен — възможни проблеми с липсваща platform."
+            echo "⚠️ Само beta Xcode 26 е наличен — App Store може да отхвърли билда (error 90534)."
           fi
 
           if [ -n "$XCODE_APP" ]; then
             sudo xcode-select -s "$XCODE_APP/Contents/Developer"
             echo "✅ Selected $(basename "$XCODE_APP")"
           else
-            echo "ℹ️ Няма /Applications/Xcode_26*.app — ползвам default Xcode."
+            echo "ℹ️ Няма /Applications/Xcode*.app — ползвам default Xcode."
           fi
 
           XCODE_VERSION="$(xcodebuild -version | tr '\n' ' ' | sed 's/  */ /g')"

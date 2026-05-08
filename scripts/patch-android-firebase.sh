@@ -138,9 +138,10 @@ if grep -q 'android:name=".MyApplication"' "$MANIFEST"; then
 elif grep -qE '<application[^>]*android:name=' "$MANIFEST"; then
   fail "<application> вече има друг android:name. Премахни го ръчно или поправи скрипта."
 else
-  # Вмъкни android:name=".MyApplication" в <application ...> tag
-  sed -i.bak -E 's|<application |<application android:name=".MyApplication" |' "$MANIFEST"
-  rm -f "$MANIFEST.bak"
+  # Вмъкни android:name=".MyApplication" в <application ...> tag.
+  # Capacitor генерира <application последвано от newline, не space —
+  # затова ползваме perl в slurp mode за да match-нем през редове.
+  perl -i -0777 -pe 's|<application(\s)|<application android:name=".MyApplication"$1|' "$MANIFEST"
 fi
 grep -q 'android:name=".MyApplication"' "$MANIFEST" \
   || fail "android:name=\".MyApplication\" не беше добавен в AndroidManifest."
