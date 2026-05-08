@@ -34,7 +34,10 @@ on:
 
 jobs:
   ios:
-    runs-on: macos-26
+    # macos-26 image към май 2026 има само beta Xcode 26 → App Store връща
+    # error 90534 ("Unsupported SDK or Xcode version"). macos-15 има стабилен
+    # Xcode 16.x с iOS 18 SDK, който App Store приема.
+    runs-on: macos-15
 
     env:
       IOS_DIST_CERTIFICATE_P12_BASE64:    ${{ secrets.IOS_DIST_CERTIFICATE_P12_BASE64 }}
