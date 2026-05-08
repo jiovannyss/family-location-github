@@ -13,3 +13,5 @@ project_id = "mrcetakiztvbdwaduvco"
     verify_jwt = false
   [functions.test-push]
     verify_jwt = true
+  [functions.location-refresh-upload]
+    verify_jwt = false
