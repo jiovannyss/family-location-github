@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { MapPin, Users, Loader2, List, Map as MapIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -8,6 +9,7 @@ import { useCircleMembers, useCircles } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
 import { useAppBadgeSync } from '@/hooks/useAppBadge';
 import { usePeerLocationRefresh } from '@/hooks/usePeerLocationRefresh';
+import { requestPeerLocationRefresh } from '@/services/locationRefresh';
 import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
 import { useMapStyleSync } from '@/hooks/useMapStyleSync';
 import { Circle, MemberWithLocation } from '@/lib/types';
