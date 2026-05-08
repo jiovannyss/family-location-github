@@ -52,6 +52,7 @@ public class LocationRefreshForegroundService extends Service {
     private static final String CHANNEL_ID = "loc_refresh_channel";
     private static final int NOTIF_ID = 4711;
     private static final long GPS_TIMEOUT_MS = 30_000L;
+    private static final long GPS_RETRY_BALANCED_MS = 12_000L;
     private static final int UPLOAD_TIMEOUT_MS = 15_000;
     private static final String PREFS_NAME = "CapacitorStorage";
     private static final String PREFS_USER = "fam_user_id";
