@@ -226,21 +226,27 @@ export function useLocationTracking() {
 
 export function useRealtimeLocations(userIds: string[]) {
   const queryClient = useQueryClient();
+  const idsKey = userIds.join(',');
 
   useEffect(() => {
     if (userIds.length === 0) return;
 
+    const allowed = new Set(userIds);
+    // Note: no `filter` here — RLS already restricts which rows we can see.
+    // The `in.()` filter on postgres_changes was sometimes silently dropping
+    // events, so we filter client-side instead.
     const channel = supabase
-      .channel('location-updates')
+      .channel(`location-updates-${idsKey}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'location_points',
-          filter: `user_id=in.(${userIds.join(',')})`,
         },
-        () => {
+        (payload) => {
+          const uid = (payload.new as { user_id?: string } | null)?.user_id;
+          if (!uid || !allowed.has(uid)) return;
           queryClient.invalidateQueries({ queryKey: ['circle-members'] });
         }
       )
@@ -249,5 +255,6 @@ export function useRealtimeLocations(userIds: string[]) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userIds.join(','), queryClient]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey, queryClient]);
 }

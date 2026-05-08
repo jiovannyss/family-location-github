@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { MapPin, Users, Loader2, List, Map as MapIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -8,6 +9,7 @@ import { useCircleMembers, useCircles } from '@/hooks/useCircles';
 import { useRealtimeLocations } from '@/hooks/useLocation';
 import { useAppBadgeSync } from '@/hooks/useAppBadge';
 import { usePeerLocationRefresh } from '@/hooks/usePeerLocationRefresh';
+import { requestPeerLocationRefresh } from '@/services/locationRefresh';
 import { useHardwareBackButton } from '@/hooks/useHardwareBackButton';
 import { useMapStyleSync } from '@/hooks/useMapStyleSync';
 import { Circle, MemberWithLocation } from '@/lib/types';
@@ -26,6 +28,7 @@ const Index = () => {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
   const { circles } = useCircles();
+  const queryClient = useQueryClient();
 
   // Always derive selected circle from the freshest list (so renames propagate)
   const selectedCircle = useMemo<Circle | null>(() => {
@@ -70,6 +73,15 @@ const Index = () => {
     }
     setSelectedMemberId(member.id);
     setMobileTab('map');
+
+    // Помоли peer-а за свежа локация и refetch-ни няколко пъти,
+    // за да хванем INSERT-а дори ако realtime закъснее.
+    void requestPeerLocationRefresh({ force: true });
+    [2000, 5000, 10000].forEach((ms) => {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['circle-members'] });
+      }, ms);
+    });
   };
 
   if (loading) {
