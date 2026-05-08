@@ -95,12 +95,17 @@ async function handleLocationRefreshPush(source: string) {
   pushLog('location_refresh handler START', { source, foregroundState: fgState, t0 });
   let uid: string | undefined;
   try {
-    pushLog('location_refresh handler before session lookup');
-    const { data } = await withTimeout(supabase.auth.getSession(), 5000, 'getSession');
-    uid = data.session?.user?.id;
-    pushLog('location_refresh handler session result', { hasSession: !!uid });
+    pushLog('location_refresh handler before cached uid lookup');
+    let cachedUid: string | null = null;
+    try {
+      cachedUid = await withTimeout(getCachedPushUid(), 2000, 'getCachedPushUid');
+    } catch (e) {
+      pushLog('location_refresh handler cached uid lookup FAILED', { error: (e as Error)?.message || String(e) });
+    }
+    uid = cachedUid ?? undefined;
+    pushLog('location_refresh handler cached uid result', { hasUid: !!uid });
     if (!uid) {
-      pushLog('location_refresh handler ABORT no session');
+      pushLog('location_refresh handler ABORT no cached auth context');
       return;
     }
 
