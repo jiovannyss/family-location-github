@@ -588,6 +588,7 @@ class NativePushService implements PushService {
     } catch (e) {
       console.warn('[push] unregister failed', e);
     }
+    void setCachedPushUid(null);
   }
 
   private async saveToken(userId: string, token: string, invocationId?: string) {
