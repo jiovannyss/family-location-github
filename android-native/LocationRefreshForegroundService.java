@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -51,6 +52,7 @@ public class LocationRefreshForegroundService extends Service {
     private static final String CHANNEL_ID = "loc_refresh_channel";
     private static final int NOTIF_ID = 4711;
     private static final long GPS_TIMEOUT_MS = 30_000L;
+    private static final long GPS_RETRY_BALANCED_MS = 12_000L;
     private static final int UPLOAD_TIMEOUT_MS = 15_000;
     private static final String PREFS_NAME = "CapacitorStorage";
     private static final String PREFS_USER = "fam_user_id";
@@ -111,6 +113,28 @@ public class LocationRefreshForegroundService extends Service {
                 stopSelfSafe();
                 return START_NOT_STICKY;
             }
+
+            // Диагностика: логваме background-location и състояние на GPS providers,
+            // за да разберем защо Fused Location връща null при заключен екран.
+            boolean bgGranted = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                bgGranted = ContextCompat.checkSelfPermission(
+                        this, Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED;
+            }
+            boolean gpsEnabled = false;
+            boolean netEnabled = false;
+            try {
+                LocationManager lm = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+                if (lm != null) {
+                    gpsEnabled = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+                    netEnabled = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "NATIVE provider check failed", t);
+            }
+            Log.i(TAG, "NATIVE perms bgLocation=" + bgGranted
+                    + " gpsProvider=" + gpsEnabled + " networkProvider=" + netEnabled);
 
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             String userId = prefs.getString(PREFS_USER, null);
@@ -222,6 +246,27 @@ public class LocationRefreshForegroundService extends Service {
                 }
             };
             mainHandler.postDelayed(watchdogRef[0], GPS_TIMEOUT_MS);
+
+            // BALANCED retry: ако GPS-ът не върне fix до 12 сек, паралелно
+            // стартираме втора заявка с по-ниска точност (network/cell), която
+            // често връща fix дори когато GPS hardware не може (закрит екран,
+            // вътре в сграда). Първият който върне резултат печели.
+            mainHandler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (handled[0]) return;
+                    Log.i(TAG, "NATIVE GPS retry with BALANCED priority");
+                    try {
+                        LocationRequest balanced = new LocationRequest.Builder(
+                                    Priority.PRIORITY_BALANCED_POWER_ACCURACY, 1000L)
+                                .setMinUpdateIntervalMillis(500L)
+                                .setMaxUpdates(1)
+                                .build();
+                        client.requestLocationUpdates(balanced, cbRef[0], Looper.getMainLooper());
+                    } catch (Throwable t) {
+                        Log.w(TAG, "NATIVE BALANCED retry failed", t);
+                    }
+                }
+            }, GPS_RETRY_BALANCED_MS);
 
             try {
                 client.requestLocationUpdates(req, cbRef[0], Looper.getMainLooper());
