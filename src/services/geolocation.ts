@@ -48,10 +48,16 @@ export interface PermissionResult {
   state: 'granted' | 'denied' | 'prompt' | 'unknown';
 }
 
+export interface GetCurrentPositionOptions {
+  timeoutMs?: number;
+  enableHighAccuracy?: boolean;
+  maximumAgeMs?: number;
+}
+
 export interface GeolocationService {
   isAvailable(): boolean;
   checkPermission(): Promise<PermissionResult>;
-  getCurrentPosition(): Promise<Coords>;
+  getCurrentPosition(opts?: GetCurrentPositionOptions): Promise<Coords>;
   watchPosition(cb: (coords: Coords) => void, onError?: (err: Error) => void): () => void;
 }
 
