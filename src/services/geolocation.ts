@@ -8,12 +8,40 @@
  */
 import { Geolocation } from '@capacitor/geolocation';
 import { isNative } from './platform';
+import { storage } from './storage';
 
 export interface Coords {
   lat: number;
   lng: number;
   accuracy: number | null;
   timestamp: number;
+}
+
+// ---------- Last-known position cache ----------
+// Used by the locked-screen `location_refresh` push handler as a safe fallback
+// when `getCurrentPosition` fails (Android often can't acquire fresh GPS while
+// the screen is locked). NEVER report cached coords as fresh — the push
+// handler uploads them with source=push_location_refresh_cached_fallback.
+const LAST_KNOWN_KEY = 'geo_last_known';
+let lastKnownMem: Coords | null = null;
+
+export async function cacheLastKnownCoords(coords: Coords): Promise<void> {
+  lastKnownMem = coords;
+  try { await storage.set(LAST_KNOWN_KEY, JSON.stringify(coords)); } catch { /* ignore */ }
+}
+
+export async function getLastKnownCoords(): Promise<Coords | null> {
+  if (lastKnownMem) return lastKnownMem;
+  try {
+    const v = await storage.get(LAST_KNOWN_KEY);
+    if (!v) return null;
+    const parsed = JSON.parse(v) as Coords;
+    if (typeof parsed?.lat === 'number' && typeof parsed?.lng === 'number') {
+      lastKnownMem = parsed;
+      return parsed;
+    }
+  } catch { /* ignore */ }
+  return null;
 }
 
 export interface PermissionResult {
