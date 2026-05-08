@@ -32,32 +32,111 @@ function pushLog(message: string, details?: Record<string, unknown>) {
  * Извикан когато получим silent push с type=location_refresh.
  * Взема свежа локация и я качва — без да показва UI.
  */
+/**
+ * Извикан когато получим silent push с type=location_refresh.
+ *
+ * ВАЖНО за background/locked screen на Android:
+ *  - Този handler работи САМО ако JS runtime-ът на WebView-а е жив.
+ *  - При locked screen (приложението още е в paused state, не killed):
+ *    WebView може да е suspended → setTimeout/promises замръзват и
+ *    `getCurrentPosition` тихо не resolve-ва. Затова добавяме hard timeout.
+ *  - При killed/swiped app: НЯМА JS runtime, този handler НЕ се извиква
+ *    изобщо. За това се нуждаем от native FirebaseMessagingService на
+ *    Android, който да обработва data-only push без JS — отделен етап.
+ */
+const GEO_TIMEOUT_MS = 20000;
+const UPLOAD_TIMEOUT_MS = 15000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
+    p.then(
+      (v) => { clearTimeout(t); resolve(v); },
+      (e) => { clearTimeout(t); reject(e); },
+    );
+  });
+}
+
 async function handleLocationRefreshPush(source: string) {
-  pushLog('location_refresh handler START', { source });
+  const t0 = Date.now();
+  const fgState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
+  pushLog('location_refresh handler START', { source, foregroundState: fgState, t0 });
+  let uid: string | undefined;
   try {
-    const { data } = await supabase.auth.getSession();
-    const uid = data.session?.user?.id;
+    pushLog('location_refresh handler before session lookup');
+    const { data } = await withTimeout(supabase.auth.getSession(), 5000, 'getSession');
+    uid = data.session?.user?.id;
+    pushLog('location_refresh handler session result', { hasSession: !!uid });
     if (!uid) {
       pushLog('location_refresh handler ABORT no session');
       return;
     }
-    pushLog('location_refresh handler getCurrentPosition');
-    const coords = await geolocation.getCurrentPosition();
-    pushLog('location_refresh handler GPS acquired', {
+
+    pushLog('location_refresh handler before permission check');
+    let permState: string = 'unknown';
+    try {
+      const perm = await withTimeout(geolocation.checkPermission(), 4000, 'checkPermission');
+      permState = perm.state;
+    } catch (e) {
+      pushLog('location_refresh handler permission check FAILED', { error: (e as Error)?.message || String(e) });
+    }
+    pushLog('location_refresh handler permission result', { permState });
+    if (permState === 'denied') {
+      pushLog('location_refresh handler ABORT permission denied');
+      return;
+    }
+
+    pushLog('location_refresh handler before getCurrentPosition', { timeoutMs: GEO_TIMEOUT_MS });
+    const tGeo = Date.now();
+    let coords;
+    try {
+      coords = await withTimeout(geolocation.getCurrentPosition(), GEO_TIMEOUT_MS, 'getCurrentPosition');
+    } catch (e) {
+      pushLog('location_refresh handler getCurrentPosition FAILED', {
+        error: (e as Error)?.message || String(e),
+        elapsedMs: Date.now() - tGeo,
+        foregroundState: (typeof document !== 'undefined' && document.visibilityState) || 'unknown',
+      });
+      return;
+    }
+    pushLog('location_refresh handler getCurrentPosition success', {
       lat: coords.lat, lng: coords.lng, accuracy: coords.accuracy,
+      elapsedMs: Date.now() - tGeo,
     });
-    await uploadLocationPoint({
-      userId: uid,
-      deviceId: getDeviceId(),
-      lat: coords.lat,
-      lng: coords.lng,
-      accuracy: coords.accuracy,
-      recordedAt: new Date().toISOString(),
-      devicePlatform: getDeviceInfo().platform,
-    });
+
+    pushLog('location_refresh handler before upload');
+    const tUp = Date.now();
+    try {
+      await withTimeout(
+        uploadLocationPoint({
+          userId: uid,
+          deviceId: getDeviceId(),
+          lat: coords.lat,
+          lng: coords.lng,
+          accuracy: coords.accuracy,
+          recordedAt: new Date().toISOString(),
+          devicePlatform: getDeviceInfo().platform,
+        }),
+        UPLOAD_TIMEOUT_MS,
+        'uploadLocationPoint',
+      );
+    } catch (e) {
+      pushLog('location_refresh handler upload FAILED', {
+        error: (e as Error)?.message || String(e),
+        elapsedMs: Date.now() - tUp,
+      });
+      return;
+    }
+    pushLog('location_refresh handler upload success', { elapsedMs: Date.now() - tUp });
     pushLog('location_refresh handler DB updated', { uid });
   } catch (e) {
-    pushLog('location_refresh handler FAILED', { error: (e as Error)?.message || String(e) });
+    pushLog('location_refresh handler FAILED outer', { error: (e as Error)?.message || String(e) });
+  } finally {
+    pushLog('location_refresh handler FINALLY', {
+      uid: uid ?? null,
+      totalElapsedMs: Date.now() - t0,
+      foregroundState: (typeof document !== 'undefined' && document.visibilityState) || 'unknown',
+    });
   }
 }
 
