@@ -141,22 +141,47 @@ async function handleLocationRefreshPush(source: string) {
       elapsedMs: Date.now() - tGeo,
     });
 
-    pushLog('location_refresh handler before upload');
+    pushLog('location_refresh handler before native upload');
     const tUp = Date.now();
     try {
-      await withTimeout(
-        uploadLocationPoint({
-          userId: uid,
-          deviceId: getDeviceId(),
-          lat: coords.lat,
-          lng: coords.lng,
-          accuracy: coords.accuracy,
-          recordedAt: new Date().toISOString(),
-          devicePlatform: getDeviceInfo().platform,
-        }),
+      const { CapacitorHttp } = await import('@capacitor/core');
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/location-refresh-upload`;
+      const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+      const payload = {
+        userId: uid,
+        deviceId: getDeviceId(),
+        latitude: coords.lat,
+        longitude: coords.lng,
+        accuracy: coords.accuracy,
+        timestamp: new Date().toISOString(),
+        source: 'push_location_refresh',
+        devicePlatform: getDeviceInfo().platform,
+      };
+      const resp = await withTimeout(
+        CapacitorHttp.post({
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            apikey,
+            Authorization: `Bearer ${apikey}`,
+          },
+          data: payload,
+        }) as Promise<{ status: number; data: unknown }>,
         UPLOAD_TIMEOUT_MS,
-        'uploadLocationPoint',
+        'native upload',
       );
+      pushLog('location_refresh handler native upload response', {
+        status: resp.status,
+        body: typeof resp.data === 'string' ? resp.data.slice(0, 200) : resp.data,
+        elapsedMs: Date.now() - tUp,
+      });
+      if (resp.status < 200 || resp.status >= 300) {
+        pushLog('location_refresh handler upload FAILED', {
+          status: resp.status,
+          body: resp.data,
+        });
+        return;
+      }
     } catch (e) {
       pushLog('location_refresh handler upload FAILED', {
         error: (e as Error)?.message || String(e),
@@ -164,7 +189,6 @@ async function handleLocationRefreshPush(source: string) {
       });
       return;
     }
-    pushLog('location_refresh handler upload success', { elapsedMs: Date.now() - tUp });
     pushLog('location_refresh handler DB updated', { uid });
   } catch (e) {
     pushLog('location_refresh handler FAILED outer', { error: (e as Error)?.message || String(e) });
