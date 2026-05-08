@@ -93,22 +93,6 @@ function pushLog(message: string, details?: Record<string, unknown>) {
  *    изобщо. За това се нуждаем от native FirebaseMessagingService на
  *    Android, който да обработва data-only push без JS — отделен етап.
  */
-const GEO_TIMEOUT_MS = 20000;
-const UPLOAD_TIMEOUT_MS = 15000;
-
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
-    p.then(
-      (v) => { clearTimeout(t); resolve(v); },
-      (e) => { clearTimeout(t); reject(e); },
-    );
-  });
-}
-
-async function handleLocationRefreshPush(source: string) {
-  const t0 = Date.now();
-  const fgState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
 const GEO_TIMEOUT_MS = 30000; // bumped for locked-screen Android (was 10/20s)
 const UPLOAD_TIMEOUT_MS = 15000;
 const CACHED_FALLBACK_MAX_AGE_MS = 15 * 60 * 1000; // 15 min
