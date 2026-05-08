@@ -75,26 +75,37 @@ class WebGeolocation implements GeolocationService {
       return { state: 'unknown' };
     }
   }
-  getCurrentPosition(): Promise<Coords> {
+  getCurrentPosition(opts?: GetCurrentPositionOptions): Promise<Coords> {
+    const timeout = opts?.timeoutMs ?? 10000;
+    const enableHighAccuracy = opts?.enableHighAccuracy ?? true;
+    const maximumAge = opts?.maximumAgeMs ?? 60000;
     return new Promise((resolve, reject) => {
       if (!this.isAvailable()) { reject(new Error('Geolocation not available')); return; }
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({
-          lat: pos.coords.latitude, lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy ?? null, timestamp: pos.timestamp,
-        }),
+        (pos) => {
+          const c: Coords = {
+            lat: pos.coords.latitude, lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? null, timestamp: pos.timestamp,
+          };
+          void cacheLastKnownCoords(c);
+          resolve(c);
+        },
         (err) => reject(new Error(err.message || 'Location error')),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        { enableHighAccuracy, timeout, maximumAge }
       );
     });
   }
   watchPosition(cb: (coords: Coords) => void, onError?: (err: Error) => void): () => void {
     if (!this.isAvailable()) { onError?.(new Error('Geolocation not available')); return () => {}; }
     const id = navigator.geolocation.watchPosition(
-      (pos) => cb({
-        lat: pos.coords.latitude, lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy ?? null, timestamp: pos.timestamp,
-      }),
+      (pos) => {
+        const c: Coords = {
+          lat: pos.coords.latitude, lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? null, timestamp: pos.timestamp,
+        };
+        void cacheLastKnownCoords(c);
+        cb(c);
+      },
       (err) => onError?.(new Error(err.message || 'Location error')),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
