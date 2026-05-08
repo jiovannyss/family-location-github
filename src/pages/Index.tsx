@@ -28,6 +28,7 @@ const Index = () => {
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<'list' | 'map'>('list');
   const { circles } = useCircles();
+  const queryClient = useQueryClient();
 
   // Always derive selected circle from the freshest list (so renames propagate)
   const selectedCircle = useMemo<Circle | null>(() => {
