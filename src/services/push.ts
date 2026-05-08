@@ -192,6 +192,11 @@ let locationRefreshInFlight = false;
 async function handleLocationRefreshPush(source: string) {
   const t0 = Date.now();
   const fgState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
+  if (locationRefreshInFlight) {
+    pushLog('location_refresh handler SKIP in-flight', { source, foregroundState: fgState });
+    return;
+  }
+  locationRefreshInFlight = true;
   pushLog('location_refresh handler START', {
     source,
     foregroundState: fgState,
