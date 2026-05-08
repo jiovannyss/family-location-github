@@ -19,6 +19,38 @@ import { geolocation } from './geolocation';
 import { uploadLocationPoint } from './locationUpload';
 import { getDeviceId } from './deviceId';
 import { getDeviceInfo } from './device';
+import { storage } from './storage';
+
+/**
+ * Cached auth user id за background push handler.
+ *
+ * При locked screen на Android, supabase.auth.getSession() може да виси
+ * безкрайно (auth lock-ът чака network/refresh). Затова при успешна
+ * регистрация запазваме userId в persistent storage и в module cache,
+ * така че location_refresh handler-ът да го прочете директно, без да
+ * пипа Supabase auth client-а.
+ */
+const CACHED_PUSH_UID_KEY = 'push_cached_uid';
+let cachedPushUid: string | null = null;
+
+export async function setCachedPushUid(uid: string | null): Promise<void> {
+  cachedPushUid = uid;
+  try {
+    if (uid) await storage.set(CACHED_PUSH_UID_KEY, uid);
+    else await storage.remove(CACHED_PUSH_UID_KEY);
+  } catch { /* ignore */ }
+}
+
+async function getCachedPushUid(): Promise<string | null> {
+  if (cachedPushUid) return cachedPushUid;
+  try {
+    const v = await storage.get(CACHED_PUSH_UID_KEY);
+    if (v) cachedPushUid = v;
+    return cachedPushUid;
+  } catch {
+    return cachedPushUid;
+  }
+}
 
 function pushLog(message: string, details?: Record<string, unknown>) {
   if (details) {
@@ -63,12 +95,17 @@ async function handleLocationRefreshPush(source: string) {
   pushLog('location_refresh handler START', { source, foregroundState: fgState, t0 });
   let uid: string | undefined;
   try {
-    pushLog('location_refresh handler before session lookup');
-    const { data } = await withTimeout(supabase.auth.getSession(), 5000, 'getSession');
-    uid = data.session?.user?.id;
-    pushLog('location_refresh handler session result', { hasSession: !!uid });
+    pushLog('location_refresh handler before cached uid lookup');
+    let cachedUid: string | null = null;
+    try {
+      cachedUid = await withTimeout(getCachedPushUid(), 2000, 'getCachedPushUid');
+    } catch (e) {
+      pushLog('location_refresh handler cached uid lookup FAILED', { error: (e as Error)?.message || String(e) });
+    }
+    uid = cachedUid ?? undefined;
+    pushLog('location_refresh handler cached uid result', { hasUid: !!uid });
     if (!uid) {
-      pushLog('location_refresh handler ABORT no session');
+      pushLog('location_refresh handler ABORT no cached auth context');
       return;
     }
 
@@ -251,6 +288,7 @@ class NativePushService implements PushService {
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
+    void setCachedPushUid(userId);
     const invocationId = nextRegisterInvocationId();
     activeRegisterInvocationCount += 1;
 
@@ -550,6 +588,7 @@ class NativePushService implements PushService {
     } catch (e) {
       console.warn('[push] unregister failed', e);
     }
+    void setCachedPushUid(null);
   }
 
   private async saveToken(userId: string, token: string, invocationId?: string) {
