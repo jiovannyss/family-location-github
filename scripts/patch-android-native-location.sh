@@ -75,17 +75,28 @@ if [ -z "$SUPABASE_URL_VAL" ] || [ -z "$SUPABASE_ANON_VAL" ]; then
   echo "   Native upload ще fail-ва, докато не се конфигурира."
 fi
 
-# 4a) Премахни стари наши <meta-data> entries (rewrite-safe)
+# 4a) Гарантирай xmlns:tools на <manifest> (нужно за tools:node="remove")
+if ! grep -q 'xmlns:tools=' "$MANIFEST"; then
+  perl -i -0777 -pe 's|<manifest(\s+xmlns:android="[^"]+")|<manifest$1 xmlns:tools="http://schemas.android.com/tools"|' "$MANIFEST"
+  echo "  + xmlns:tools на <manifest>"
+fi
+
+# 4b) Премахни стари наши <meta-data> и <service> entries (idempotent rewrite)
 perl -i -0777 -pe 's|\s*<meta-data android:name="SUPABASE_URL"[^/]*/>||g' "$MANIFEST"
 perl -i -0777 -pe 's|\s*<meta-data android:name="SUPABASE_ANON_KEY"[^/]*/>||g' "$MANIFEST"
-# 4b) Премахни стари наши <service> entries
 perl -i -0777 -pe 's|\s*<service[^>]*android:name="\.FamilyLocationMessagingService".*?</service>||gs' "$MANIFEST"
 perl -i -0777 -pe 's|\s*<service[^>]*android:name="\.LocationRefreshForegroundService"[^/]*/>||g' "$MANIFEST"
+perl -i -0777 -pe 's|\s*<service[^>]*android:name="com\.capacitorjs\.plugins\.pushnotifications\.MessagingService"[^/]*/>||g' "$MANIFEST"
 
 # 4c) Вмъкни наново преди </application>
 INJECT=$(cat <<EOF
         <meta-data android:name="SUPABASE_URL" android:value="${SUPABASE_URL_VAL}" />
         <meta-data android:name="SUPABASE_ANON_KEY" android:value="${SUPABASE_ANON_VAL}" />
+
+        <!-- Disable Capacitor's default MessagingService (нашият extends го и поема всичко) -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
 
         <service
             android:name=".FamilyLocationMessagingService"
@@ -101,13 +112,13 @@ INJECT=$(cat <<EOF
             android:exported="false" />
 EOF
 )
-# Escape за perl substitution
 INJECT_ESCAPED=$(printf '%s' "$INJECT" | perl -pe 's/([\\\/\$\@\%])/\\$1/g')
 perl -i -0777 -pe "s|</application>|${INJECT_ESCAPED}\n    </application>|" "$MANIFEST"
 
 grep -q 'FamilyLocationMessagingService' "$MANIFEST" || { echo "❌ FamilyLocationMessagingService не беше регистриран в manifest"; exit 1; }
 grep -q 'LocationRefreshForegroundService' "$MANIFEST" || { echo "❌ LocationRefreshForegroundService не беше регистриран в manifest"; exit 1; }
-echo "  ✅ services + meta-data в AndroidManifest.xml"
+grep -q 'tools:node="remove"' "$MANIFEST" || { echo "❌ tools:node=remove за Capacitor's MessagingService не беше добавен"; exit 1; }
+echo "  ✅ services + meta-data + override в AndroidManifest.xml"
 
 echo "✅ Native location service patch complete."
 echo "   Debug logs: adb logcat -s FamLocNative:V"
