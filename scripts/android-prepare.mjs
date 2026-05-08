@@ -253,6 +253,202 @@ function findFile(dir, name) {
 }
 
 // =========================================================================
+// 3) Native Stage 2: locked-screen / killed-app location refresh
+// =========================================================================
+function patchNativeLocation() {
+  const nativeDir = path.join(ROOT, 'android-native');
+  const appGradle = path.join(ROOT, 'android/app/build.gradle');
+  const manifest = path.join(ROOT, 'android/app/src/main/AndroidManifest.xml');
+  const javaRoot = path.join(ROOT, 'android/app/src/main/java');
+
+  if (!exists(nativeDir)) fail(`android-native/ липсва — не мога да копирам native services.`);
+  if (!exists(appGradle)) fail(`${appGradle} липсва.`);
+  if (!exists(manifest)) fail(`${manifest} липсва.`);
+
+  info('🔧 Patching native Android location service (Stage 2)');
+
+  // 3.1 Намери package през MainActivity
+  const mainActivity =
+    findFile(javaRoot, 'MainActivity.java') ||
+    findFile(javaRoot, 'MainActivity.kt');
+  if (!mainActivity) fail('MainActivity.{java,kt} не е намерен.');
+  const maSrc = read(mainActivity);
+  const pkgMatch = maSrc.match(/^package\s+([^;\s]+)/m);
+  if (!pkgMatch) fail('Не успях да extract-на package от MainActivity.');
+  const pkg = pkgMatch[1];
+  const appDir = path.dirname(mainActivity);
+  info(`  ✅ package=${pkg}`);
+
+  // 3.2 Копирай Kotlin файловете със заместен package
+  const ktFiles = fs.readdirSync(nativeDir).filter((f) => f.endsWith('.kt'));
+  if (ktFiles.length === 0) fail('android-native/ не съдържа .kt файлове.');
+  for (const f of ktFiles) {
+    const src = read(path.join(nativeDir, f)).replace(/__PACKAGE__/g, pkg);
+    write(path.join(appDir, f), src);
+    info(`  + ${f}`);
+  }
+
+  // 3.3 Gradle dependencies
+  const deps = [
+    'com.google.android.gms:play-services-location:21.3.0',
+    'com.squareup.okhttp3:okhttp:4.12.0',
+    'androidx.core:core-ktx:1.13.1',
+  ];
+  let ag = read(appGradle);
+  for (const dep of deps) {
+    if (!ag.includes(dep)) {
+      ag = ag.replace(
+        /(dependencies\s*\{\s*\n)/,
+        `$1    implementation '${dep}'\n`
+      );
+      info(`  + dep ${dep}`);
+    }
+  }
+  write(appGradle, ag);
+
+  // 3.4 Прочети Supabase URL/key от env / .env
+  let SUPABASE_URL_VAL = process.env.VITE_SUPABASE_URL || '';
+  let SUPABASE_ANON_VAL =
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY || '';
+  const envFile = path.join(ROOT, '.env');
+  if ((!SUPABASE_URL_VAL || !SUPABASE_ANON_VAL) && exists(envFile)) {
+    const envSrc = read(envFile);
+    const pick = (k) => {
+      const m = envSrc.match(new RegExp(`^${k}=(.*)$`, 'm'));
+      return m ? m[1].replace(/^["']|["']$/g, '').trim() : '';
+    };
+    SUPABASE_URL_VAL = SUPABASE_URL_VAL || pick('VITE_SUPABASE_URL');
+    SUPABASE_ANON_VAL =
+      SUPABASE_ANON_VAL ||
+      pick('VITE_SUPABASE_PUBLISHABLE_KEY') ||
+      pick('VITE_SUPABASE_ANON_KEY');
+  }
+  if (!SUPABASE_URL_VAL || !SUPABASE_ANON_VAL) {
+    info('⚠️  Липсват VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY — meta-data ще е празно (native upload ще fail-ва).');
+  }
+
+  // 3.5 Manifest: xmlns:tools
+  let m = read(manifest);
+  if (!/xmlns:tools=/.test(m)) {
+    m = m.replace(
+      /<manifest(\s+xmlns:android="[^"]+")/,
+      `<manifest$1 xmlns:tools="http://schemas.android.com/tools"`
+    );
+    info('  + xmlns:tools на <manifest>');
+  }
+
+  // 3.6 Премахни старите наши entries (idempotent)
+  m = m.replace(/\s*<meta-data android:name="SUPABASE_URL"[^/]*\/>/g, '');
+  m = m.replace(/\s*<meta-data android:name="SUPABASE_ANON_KEY"[^/]*\/>/g, '');
+  m = m.replace(/\s*<service[^>]*android:name="\.FamilyLocationMessagingService"[\s\S]*?<\/service>/g, '');
+  m = m.replace(/\s*<service[^>]*android:name="\.LocationRefreshForegroundService"[^/]*\/>/g, '');
+  m = m.replace(/\s*<service[^>]*android:name="com\.capacitorjs\.plugins\.pushnotifications\.MessagingService"[^/]*\/>/g, '');
+
+  // 3.7 Inject преди </application>
+  const inject = `        <meta-data android:name="SUPABASE_URL" android:value="${SUPABASE_URL_VAL}" />
+        <meta-data android:name="SUPABASE_ANON_KEY" android:value="${SUPABASE_ANON_VAL}" />
+
+        <!-- Disable Capacitor's default MessagingService (нашият extends го) -->
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+
+        <service
+            android:name=".FamilyLocationMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".LocationRefreshForegroundService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+`;
+  if (!m.includes('</application>')) fail('Не намерих </application> в AndroidManifest.');
+  m = m.replace('</application>', `${inject}    </application>`);
+  write(manifest, m);
+
+  info('  ✅ services + meta-data + Capacitor override в AndroidManifest.xml');
+  info('✅ Native location service patch complete.');
+}
+
+// =========================================================================
+// 4) Verify — задължителен hard check; fail-ва ако нещо липсва
+// =========================================================================
+function verifyAndroidStage2() {
+  info('🔎 Verify Stage 2 integration');
+  const errors = [];
+
+  const manifest = path.join(ROOT, 'android/app/src/main/AndroidManifest.xml');
+  const appGradle = path.join(ROOT, 'android/app/build.gradle');
+  const javaRoot = path.join(ROOT, 'android/app/src/main/java');
+  const mainActivity =
+    findFile(javaRoot, 'MainActivity.java') ||
+    findFile(javaRoot, 'MainActivity.kt');
+
+  if (!exists(manifest)) errors.push('AndroidManifest.xml липсва');
+  if (!exists(appGradle)) errors.push('android/app/build.gradle липсва');
+  if (!mainActivity) errors.push('MainActivity не е намерен');
+
+  if (mainActivity) {
+    const appDir = path.dirname(mainActivity);
+    for (const f of ['FamilyLocationMessagingService.kt', 'LocationRefreshForegroundService.kt']) {
+      if (!exists(path.join(appDir, f))) errors.push(`native файл липсва: ${f}`);
+    }
+  }
+
+  if (exists(manifest)) {
+    const m = read(manifest);
+    const requiredManifestTokens = [
+      ['xmlns:tools', 'xmlns:tools на <manifest>'],
+      ['.FamilyLocationMessagingService', 'service .FamilyLocationMessagingService'],
+      ['.LocationRefreshForegroundService', 'service .LocationRefreshForegroundService'],
+      ['tools:node="remove"', 'tools:node="remove" override на Capacitor MessagingService'],
+      ['com.google.firebase.MESSAGING_EVENT', 'intent-filter MESSAGING_EVENT'],
+      ['SUPABASE_URL', 'meta-data SUPABASE_URL'],
+      ['SUPABASE_ANON_KEY', 'meta-data SUPABASE_ANON_KEY'],
+    ];
+    for (const [tok, label] of requiredManifestTokens) {
+      if (!m.includes(tok)) errors.push(`manifest липсва: ${label}`);
+    }
+    const requiredPerms = [
+      'android.permission.ACCESS_FINE_LOCATION',
+      'android.permission.ACCESS_BACKGROUND_LOCATION',
+      'android.permission.FOREGROUND_SERVICE',
+      'android.permission.FOREGROUND_SERVICE_LOCATION',
+      'android.permission.POST_NOTIFICATIONS',
+    ];
+    for (const p of requiredPerms) {
+      if (!m.includes(p)) errors.push(`permission липсва: ${p}`);
+    }
+  }
+
+  if (exists(appGradle)) {
+    const g = read(appGradle);
+    const requiredDeps = [
+      'play-services-location',
+      'okhttp',
+      'firebase-messaging',
+    ];
+    for (const d of requiredDeps) {
+      if (!g.includes(d)) errors.push(`gradle dependency липсва: ${d}`);
+    }
+  }
+
+  if (errors.length > 0) {
+    console.error('❌ Stage 2 verify FAILED:');
+    for (const e of errors) console.error(`   - ${e}`);
+    console.error('');
+    console.error('   Поправи pipeline-а или пусни наново: npm run android:prepare');
+    process.exit(1);
+  }
+  info('✅ Stage 2 verify OK — native services, deps и permissions са на място.');
+}
+
+// =========================================================================
 // Run
 // =========================================================================
 if (!exists(path.join(ROOT, 'android'))) {
@@ -260,14 +456,21 @@ if (!exists(path.join(ROOT, 'android'))) {
    npm run build && npx cap add android && npx cap sync android`);
 }
 
-info('▶ 1/2  Patching AndroidManifest.xml');
+info('▶ 1/4  Patching AndroidManifest.xml');
 patchManifest();
 info('');
-info('▶ 2/2  Patching Firebase / google-services');
+info('▶ 2/4  Patching Firebase / google-services');
 patchFirebase();
+info('');
+info('▶ 3/4  Patching native location service (Stage 2)');
+patchNativeLocation();
+info('');
+info('▶ 4/4  Verify');
+verifyAndroidStage2();
 info('');
 info('🎉 Android проектът е готов за билд.');
 info('   Следващи стъпки:');
 info('     npx cap open android        # отваря Android Studio');
 info('     или: cd android && ./gradlew assembleDebug   (Linux/macOS)');
 info('         cd android && gradlew.bat assembleDebug  (Windows)');
+info('   Debug logs: adb logcat -s FamLocNative:V');

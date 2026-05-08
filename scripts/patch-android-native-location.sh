@@ -115,10 +115,62 @@ EOF
 INJECT_ESCAPED=$(printf '%s' "$INJECT" | perl -pe 's/([\\\/\$\@\%])/\\$1/g')
 perl -i -0777 -pe "s|</application>|${INJECT_ESCAPED}\n    </application>|" "$MANIFEST"
 
-grep -q 'FamilyLocationMessagingService' "$MANIFEST" || { echo "❌ FamilyLocationMessagingService не беше регистриран в manifest"; exit 1; }
-grep -q 'LocationRefreshForegroundService' "$MANIFEST" || { echo "❌ LocationRefreshForegroundService не беше регистриран в manifest"; exit 1; }
-grep -q 'tools:node="remove"' "$MANIFEST" || { echo "❌ tools:node=remove за Capacitor's MessagingService не беше добавен"; exit 1; }
-echo "  ✅ services + meta-data + override в AndroidManifest.xml"
+# 5) Hard verify — fail с ясно съобщение ако нещо липсва
+echo ""
+echo "🔎 Verify Stage 2 integration"
+ERR=0
+check_manifest() {
+  local needle="$1" label="$2"
+  if ! grep -qF "$needle" "$MANIFEST"; then
+    echo "  ❌ manifest липсва: $label"
+    ERR=1
+  fi
+}
+check_gradle() {
+  local needle="$1"
+  if ! grep -qF "$needle" "$APP_GRADLE"; then
+    echo "  ❌ gradle dependency липсва: $needle"
+    ERR=1
+  fi
+}
+check_file() {
+  if [ ! -f "$1" ]; then
+    echo "  ❌ native файл липсва: $1"
+    ERR=1
+  fi
+}
 
+check_file "$APP_DIR/FamilyLocationMessagingService.kt"
+check_file "$APP_DIR/LocationRefreshForegroundService.kt"
+
+check_manifest "xmlns:tools"                        "xmlns:tools на <manifest>"
+check_manifest ".FamilyLocationMessagingService"    "service .FamilyLocationMessagingService"
+check_manifest ".LocationRefreshForegroundService"  "service .LocationRefreshForegroundService"
+check_manifest 'tools:node="remove"'                "Capacitor MessagingService override"
+check_manifest "com.google.firebase.MESSAGING_EVENT" "intent-filter MESSAGING_EVENT"
+check_manifest "SUPABASE_URL"                       "meta-data SUPABASE_URL"
+check_manifest "SUPABASE_ANON_KEY"                  "meta-data SUPABASE_ANON_KEY"
+
+for p in \
+  "android.permission.ACCESS_FINE_LOCATION" \
+  "android.permission.ACCESS_BACKGROUND_LOCATION" \
+  "android.permission.FOREGROUND_SERVICE" \
+  "android.permission.FOREGROUND_SERVICE_LOCATION" \
+  "android.permission.POST_NOTIFICATIONS"; do
+  check_manifest "$p" "permission $p"
+done
+
+check_gradle "play-services-location"
+check_gradle "okhttp"
+check_gradle "firebase-messaging"
+
+if [ "$ERR" = "1" ]; then
+  echo ""
+  echo "❌ Stage 2 verify FAILED — поправи pipeline-а преди build."
+  exit 1
+fi
+echo "✅ Stage 2 verify OK — native services, deps и permissions са на място."
+
+echo ""
 echo "✅ Native location service patch complete."
 echo "   Debug logs: adb logcat -s FamLocNative:V"
