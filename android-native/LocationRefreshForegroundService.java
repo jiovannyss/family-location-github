@@ -247,6 +247,27 @@ public class LocationRefreshForegroundService extends Service {
             };
             mainHandler.postDelayed(watchdogRef[0], GPS_TIMEOUT_MS);
 
+            // BALANCED retry: ако GPS-ът не върне fix до 12 сек, паралелно
+            // стартираме втора заявка с по-ниска точност (network/cell), която
+            // често връща fix дори когато GPS hardware не може (закрит екран,
+            // вътре в сграда). Първият който върне резултат печели.
+            mainHandler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (handled[0]) return;
+                    Log.i(TAG, "NATIVE GPS retry with BALANCED priority");
+                    try {
+                        LocationRequest balanced = new LocationRequest.Builder(
+                                    Priority.PRIORITY_BALANCED_POWER_ACCURACY, 1000L)
+                                .setMinUpdateIntervalMillis(500L)
+                                .setMaxUpdates(1)
+                                .build();
+                        client.requestLocationUpdates(balanced, cbRef[0], Looper.getMainLooper());
+                    } catch (Throwable t) {
+                        Log.w(TAG, "NATIVE BALANCED retry failed", t);
+                    }
+                }
+            }, GPS_RETRY_BALANCED_MS);
+
             try {
                 client.requestLocationUpdates(req, cbRef[0], Looper.getMainLooper());
             } catch (SecurityException se) {
