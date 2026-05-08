@@ -97,6 +97,7 @@ function patchFirebase() {
   const projectGradle = path.join(ROOT, 'android/build.gradle');
   const appGradle = path.join(ROOT, 'android/app/build.gradle');
   const gsJson = path.join(ROOT, 'android/app/google-services.json');
+  const gsSource = path.join(ROOT, 'config/android/google-services.json');
   const manifest = path.join(ROOT, 'android/app/src/main/AndroidManifest.xml');
 
   if (!exists(projectGradle)) fail(`${projectGradle} липсва. Пусни 'npx cap sync android' първо.`);
@@ -105,11 +106,15 @@ function patchFirebase() {
 
   info('🔧 Patching Android Firebase config');
 
-  // 2.1 google-services.json
+  // 2.1 google-services.json — auto-copy from canonical source
+  if (exists(gsSource)) {
+    fs.copyFileSync(gsSource, gsJson);
+    info(`  ✅ copied google-services.json from ${path.relative(ROOT, gsSource)} → ${path.relative(ROOT, gsJson)}`);
+  }
+
   if (!exists(gsJson) || fs.statSync(gsJson).size === 0) {
     fail(`${path.relative(ROOT, gsJson)} липсва или е празен.
-   - Свали google-services.json от Firebase Console
-   - Сложи го на: android/app/google-services.json
+   - Сложи google-services.json на: ${path.relative(ROOT, gsSource)}
    - Пусни отново: npm run android:prepare`);
   }
   info(`  ✅ google-services.json (${fs.statSync(gsJson).size} bytes)`);
