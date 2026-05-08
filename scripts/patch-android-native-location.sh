@@ -147,8 +147,12 @@ check_file() {
   fi
 }
 
-check_file "$APP_DIR/FamilyLocationMessagingService.kt"
-check_file "$APP_DIR/LocationRefreshForegroundService.kt"
+check_file "$APP_DIR/FamilyLocationMessagingService.java"
+check_file "$APP_DIR/LocationRefreshForegroundService.java"
+if [ -f "$APP_DIR/FamilyLocationMessagingService.kt" ] || [ -f "$APP_DIR/LocationRefreshForegroundService.kt" ]; then
+  echo "  ❌ старите .kt файлове трябва да се изтрият (мигрирано към Java)"
+  ERR=1
+fi
 
 check_manifest "xmlns:tools"                        "xmlns:tools на <manifest>"
 check_manifest ".FamilyLocationMessagingService"    "service .FamilyLocationMessagingService"
