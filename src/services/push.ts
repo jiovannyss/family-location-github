@@ -15,11 +15,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { isNative, nativePlatform } from './platform';
 import { getDeviceIdAsync } from './deviceId';
 import { notifications } from './notifications';
-import { geolocation } from './geolocation';
+import { geolocation, getLastKnownCoords } from './geolocation';
 import { uploadLocationPoint } from './locationUpload';
 import { getDeviceId } from './deviceId';
 import { getDeviceInfo } from './device';
 import { storage } from './storage';
+
+function safeStringify(v: unknown): string {
+  try {
+    if (v instanceof Error) {
+      const obj: Record<string, unknown> = {
+        name: v.name, message: v.message, stack: v.stack,
+      };
+      for (const k of Object.getOwnPropertyNames(v)) {
+        if (!(k in obj)) obj[k] = (v as unknown as Record<string, unknown>)[k];
+      }
+      return JSON.stringify(obj);
+    }
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
 
 /**
  * Cached auth user id за background push handler.
