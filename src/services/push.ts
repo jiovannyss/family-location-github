@@ -19,6 +19,38 @@ import { geolocation } from './geolocation';
 import { uploadLocationPoint } from './locationUpload';
 import { getDeviceId } from './deviceId';
 import { getDeviceInfo } from './device';
+import { storage } from './storage';
+
+/**
+ * Cached auth user id за background push handler.
+ *
+ * При locked screen на Android, supabase.auth.getSession() може да виси
+ * безкрайно (auth lock-ът чака network/refresh). Затова при успешна
+ * регистрация запазваме userId в persistent storage и в module cache,
+ * така че location_refresh handler-ът да го прочете директно, без да
+ * пипа Supabase auth client-а.
+ */
+const CACHED_PUSH_UID_KEY = 'push_cached_uid';
+let cachedPushUid: string | null = null;
+
+export async function setCachedPushUid(uid: string | null): Promise<void> {
+  cachedPushUid = uid;
+  try {
+    if (uid) await storage.set(CACHED_PUSH_UID_KEY, uid);
+    else await storage.remove(CACHED_PUSH_UID_KEY);
+  } catch { /* ignore */ }
+}
+
+async function getCachedPushUid(): Promise<string | null> {
+  if (cachedPushUid) return cachedPushUid;
+  try {
+    const v = await storage.get(CACHED_PUSH_UID_KEY);
+    if (v) cachedPushUid = v;
+    return cachedPushUid;
+  } catch {
+    return cachedPushUid;
+  }
+}
 
 function pushLog(message: string, details?: Record<string, unknown>) {
   if (details) {
