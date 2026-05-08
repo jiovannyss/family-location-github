@@ -172,7 +172,6 @@ for p in \
 done
 
 check_gradle "play-services-location"
-check_gradle "okhttp"
 check_gradle "firebase-messaging"
 
 if [ "$ERR" = "1" ]; then
