@@ -27,9 +27,14 @@ chmod +x scripts/patch-android-manifest.sh
 ./scripts/patch-android-manifest.sh
 
 echo ""
-echo "▶ 2/2  Patching Firebase / google-services"
+echo "▶ 2/3  Patching Firebase / google-services"
 chmod +x scripts/patch-android-firebase.sh
 ./scripts/patch-android-firebase.sh
+
+echo ""
+echo "▶ 3/3  Patching native location service (locked-screen refresh)"
+chmod +x scripts/patch-android-native-location.sh
+./scripts/patch-android-native-location.sh
 
 echo ""
 echo "🎉 Android проектът е готов за билд."

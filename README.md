@@ -267,3 +267,34 @@ Push известията се изпращат през Firebase Cloud Messagin
 - [ ] Не може да изтриеш чужд акаунт (delete-account проверява JWT subject).
 
 При проблем — отвори issue и **не promote-вай към Closed Testing**.
+
+## Native Android locked-screen location refresh (Етап 2)
+
+Когато телефон Б е заключен или приложението е killed, JS runtime-ът на WebView не работи и обикновеният `pushNotificationReceived` listener не се изпълнява. За да реагира надеждно на `location_refresh` push-овете, проектът включва **native Android FirebaseMessagingService**, който:
+
+1. Прехваща data-only push с `type=location_refresh` директно в Java/Kotlin
+2. Стартира кратък `FOREGROUND_SERVICE_TYPE_LOCATION` service
+3. Взема свежа GPS локация чрез `FusedLocationProviderClient`
+4. Качва я към edge function `location-refresh-upload`
+5. Спира service-а
+
+Всички останали push-и се delegate-ват към Capacitor's оригинален `MessagingService` → JS foreground flow остава непокътнат.
+
+### Файлове
+- `android-native/FamilyLocationMessagingService.kt` — extends Capacitor's MessagingService
+- `android-native/LocationRefreshForegroundService.kt` — foreground GPS + upload service
+- `scripts/patch-android-native-location.sh` — идемпотентен patcher (стартира се след `cap sync`)
+
+### Debug logs
+```bash
+adb logcat -s FamLocNative:V
+```
+
+Ключови логове: `NATIVE location_refresh push received`, `NATIVE foreground service started`, `NATIVE GPS request started`, `NATIVE GPS success/failure`, `NATIVE upload started`, `NATIVE upload success/failure`, `NATIVE service stopped`.
+
+### Rollback (ако нещо счупи)
+1. Премахни стъпката "Apply native location service patch" от `.github/workflows/build-android.yml`
+2. Премахни 3-та стъпка от `scripts/android-prepare.sh`
+3. Локално: `rm -rf android/ && npx cap sync android && ./scripts/android-prepare.sh`
+
+Резултат: текущият работещ JS foreground flow се връща напълно (без native).

@@ -142,6 +142,12 @@ jobs:
           chmod +x scripts/patch-android-manifest.sh
           ./scripts/patch-android-manifest.sh
 
+      - name: Apply native location service patch (locked-screen refresh)
+        if: ${{ inputs.enable_push == 'true' }}
+        run: |
+          chmod +x scripts/patch-android-native-location.sh
+          ./scripts/patch-android-native-location.sh
+
       - name: Set app version (versionCode/versionName)
         env:
           RUN_NUMBER: ${{ github.run_number }}

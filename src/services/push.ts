@@ -56,6 +56,18 @@ export async function setCachedPushUid(uid: string | null): Promise<void> {
     if (uid) await storage.set(CACHED_PUSH_UID_KEY, uid);
     else await storage.remove(CACHED_PUSH_UID_KEY);
   } catch { /* ignore */ }
+  // Mirror към well-known ключове, които native Android service чете
+  // от SharedPreferences "CapacitorStorage" при locked-screen location_refresh.
+  // Web/iOS: безопасен no-op (Preferences plugin е достъпен и там).
+  try {
+    if (uid) {
+      await storage.set('fam_user_id', uid);
+      const did = getDeviceId();
+      if (did) await storage.set('fam_device_id', did);
+    } else {
+      await storage.remove('fam_user_id');
+    }
+  } catch { /* ignore */ }
 }
 
 async function getCachedPushUid(): Promise<string | null> {
