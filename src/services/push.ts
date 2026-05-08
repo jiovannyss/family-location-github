@@ -341,6 +341,7 @@ async function handleLocationRefreshPush(source: string) {
   } catch (e) {
     pushLog('location_refresh handler FAILED outer', { error: safeStringify(e) });
   } finally {
+    locationRefreshInFlight = false;
     pushLog('location_refresh handler FINALLY', {
       uid: uid ?? null,
       totalElapsedMs: Date.now() - t0,
