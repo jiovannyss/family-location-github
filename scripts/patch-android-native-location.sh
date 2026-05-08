@@ -35,15 +35,24 @@ APP_DIR=$(dirname "$MAIN_ACTIVITY")
 echo "  ✅ package=$PKG"
 echo "  ✅ app dir=$APP_DIR"
 
-# 2) Копирай Kotlin файловете със заместен package
-for f in "$NATIVE_DIR"/*.kt; do
+# 2) Изчисти стари .kt файлове (миграция към Java)
+for stale in FamilyLocationMessagingService.kt LocationRefreshForegroundService.kt; do
+  if [ -f "$APP_DIR/$stale" ]; then
+    rm -f "$APP_DIR/$stale"
+    echo "  - removed stale $stale"
+  fi
+done
+
+# 2b) Копирай Java файловете със заместен package
+shopt -s nullglob
+for f in "$NATIVE_DIR"/*.java; do
   base=$(basename "$f")
   dst="$APP_DIR/$base"
   sed "s|__PACKAGE__|$PKG|g" "$f" > "$dst"
   echo "  + $base"
 done
 
-# 3) Gradle dependencies
+# 3) Gradle dependencies (само play-services-location; HTTP е HttpURLConnection)
 add_dep() {
   local dep="$1"
   if ! grep -F "$dep" "$APP_GRADLE" > /dev/null; then
@@ -55,8 +64,6 @@ add_dep() {
   fi
 }
 add_dep "com.google.android.gms:play-services-location:21.3.0"
-add_dep "com.squareup.okhttp3:okhttp:4.12.0"
-add_dep "androidx.core:core-ktx:1.13.1"
 
 # 4) AndroidManifest patches — meta-data + service entries
 SUPABASE_URL_VAL="${VITE_SUPABASE_URL:-}"
@@ -140,8 +147,12 @@ check_file() {
   fi
 }
 
-check_file "$APP_DIR/FamilyLocationMessagingService.kt"
-check_file "$APP_DIR/LocationRefreshForegroundService.kt"
+check_file "$APP_DIR/FamilyLocationMessagingService.java"
+check_file "$APP_DIR/LocationRefreshForegroundService.java"
+if [ -f "$APP_DIR/FamilyLocationMessagingService.kt" ] || [ -f "$APP_DIR/LocationRefreshForegroundService.kt" ]; then
+  echo "  ❌ старите .kt файлове трябва да се изтрият (мигрирано към Java)"
+  ERR=1
+fi
 
 check_manifest "xmlns:tools"                        "xmlns:tools на <manifest>"
 check_manifest ".FamilyLocationMessagingService"    "service .FamilyLocationMessagingService"
@@ -161,7 +172,6 @@ for p in \
 done
 
 check_gradle "play-services-location"
-check_gradle "okhttp"
 check_gradle "firebase-messaging"
 
 if [ "$ERR" = "1" ]; then

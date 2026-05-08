@@ -279,20 +279,25 @@ function patchNativeLocation() {
   const appDir = path.dirname(mainActivity);
   info(`  ✅ package=${pkg}`);
 
-  // 3.2 Копирай Kotlin файловете със заместен package
-  const ktFiles = fs.readdirSync(nativeDir).filter((f) => f.endsWith('.kt'));
-  if (ktFiles.length === 0) fail('android-native/ не съдържа .kt файлове.');
-  for (const f of ktFiles) {
+  // 3.2 Изчисти стари .kt файлове (преди преминаването към Java)
+  for (const stale of ['FamilyLocationMessagingService.kt', 'LocationRefreshForegroundService.kt']) {
+    const p = path.join(appDir, stale);
+    if (exists(p)) { fs.unlinkSync(p); info(`  - removed stale ${stale}`); }
+  }
+
+  // 3.3 Копирай Java файловете със заместен package
+  const javaFiles = fs.readdirSync(nativeDir).filter((f) => f.endsWith('.java'));
+  if (javaFiles.length === 0) fail('android-native/ не съдържа .java файлове.');
+  for (const f of javaFiles) {
     const src = read(path.join(nativeDir, f)).replace(/__PACKAGE__/g, pkg);
     write(path.join(appDir, f), src);
     info(`  + ${f}`);
   }
 
-  // 3.3 Gradle dependencies
+  // 3.4 Gradle dependencies (само play-services-location;
+  //     HTTP се прави с HttpURLConnection от JDK -> няма okhttp).
   const deps = [
     'com.google.android.gms:play-services-location:21.3.0',
-    'com.squareup.okhttp3:okhttp:4.12.0',
-    'androidx.core:core-ktx:1.13.1',
   ];
   let ag = read(appGradle);
   for (const dep of deps) {
@@ -395,8 +400,12 @@ function verifyAndroidStage2() {
 
   if (mainActivity) {
     const appDir = path.dirname(mainActivity);
-    for (const f of ['FamilyLocationMessagingService.kt', 'LocationRefreshForegroundService.kt']) {
+    for (const f of ['FamilyLocationMessagingService.java', 'LocationRefreshForegroundService.java']) {
       if (!exists(path.join(appDir, f))) errors.push(`native файл липсва: ${f}`);
+    }
+    // Старите .kt не трябва да остават
+    for (const stale of ['FamilyLocationMessagingService.kt', 'LocationRefreshForegroundService.kt']) {
+      if (exists(path.join(appDir, stale))) errors.push(`стар .kt файл трябва да се изтрие: ${stale}`);
     }
   }
 
@@ -430,7 +439,6 @@ function verifyAndroidStage2() {
     const g = read(appGradle);
     const requiredDeps = [
       'play-services-location',
-      'okhttp',
       'firebase-messaging',
     ];
     for (const d of requiredDeps) {
