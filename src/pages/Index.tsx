@@ -184,7 +184,11 @@ const Index = () => {
             variant={mobileTab === 'list' ? 'default' : 'ghost'}
             size="sm"
             className="flex-1 gap-2"
-            onClick={() => setMobileTab('list')}
+            onClick={() => {
+              setMobileTab('list');
+              console.log('[refresh] requested by UI trigger', { trigger: 'tab:list' });
+              void requestPeerLocationRefresh();
+            }}
           >
             <List className="w-4 h-4" />
             Кръгове
@@ -193,7 +197,11 @@ const Index = () => {
             variant={mobileTab === 'map' ? 'default' : 'ghost'}
             size="sm"
             className="flex-1 gap-2"
-            onClick={() => setMobileTab('map')}
+            onClick={() => {
+              setMobileTab('map');
+              console.log('[refresh] requested by UI trigger', { trigger: 'tab:map' });
+              void requestPeerLocationRefresh();
+            }}
           >
             <MapIcon className="w-4 h-4" />
             Карта

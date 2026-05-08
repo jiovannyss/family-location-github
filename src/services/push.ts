@@ -15,11 +15,28 @@ import { supabase } from '@/integrations/supabase/client';
 import { isNative, nativePlatform } from './platform';
 import { getDeviceIdAsync } from './deviceId';
 import { notifications } from './notifications';
-import { geolocation } from './geolocation';
+import { geolocation, getLastKnownCoords } from './geolocation';
 import { uploadLocationPoint } from './locationUpload';
 import { getDeviceId } from './deviceId';
 import { getDeviceInfo } from './device';
 import { storage } from './storage';
+
+function safeStringify(v: unknown): string {
+  try {
+    if (v instanceof Error) {
+      const obj: Record<string, unknown> = {
+        name: v.name, message: v.message, stack: v.stack,
+      };
+      for (const k of Object.getOwnPropertyNames(v)) {
+        if (!(k in obj)) obj[k] = (v as unknown as Record<string, unknown>)[k];
+      }
+      return JSON.stringify(obj);
+    }
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
+}
 
 /**
  * Cached auth user id за background push handler.
@@ -76,8 +93,9 @@ function pushLog(message: string, details?: Record<string, unknown>) {
  *    изобщо. За това се нуждаем от native FirebaseMessagingService на
  *    Android, който да обработва data-only push без JS — отделен етап.
  */
-const GEO_TIMEOUT_MS = 20000;
+const GEO_TIMEOUT_MS = 30000; // bumped for locked-screen Android (was 10/20s)
 const UPLOAD_TIMEOUT_MS = 15000;
+const CACHED_FALLBACK_MAX_AGE_MS = 15 * 60 * 1000; // 15 min
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -89,10 +107,61 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   });
 }
 
+async function uploadLocationRefreshPoint(opts: {
+  uid: string;
+  lat: number;
+  lng: number;
+  accuracy: number | null;
+  source: string;
+  recordedAt: string;
+}): Promise<{ ok: boolean; status?: number; body?: unknown; error?: string; elapsedMs: number }> {
+  const tUp = Date.now();
+  try {
+    const { CapacitorHttp } = await import('@capacitor/core');
+    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/location-refresh-upload`;
+    const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const payload = {
+      userId: opts.uid,
+      deviceId: getDeviceId(),
+      latitude: opts.lat,
+      longitude: opts.lng,
+      accuracy: opts.accuracy,
+      timestamp: opts.recordedAt,
+      source: opts.source,
+      devicePlatform: getDeviceInfo().platform,
+    };
+    const resp = await withTimeout(
+      CapacitorHttp.post({
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          apikey,
+          Authorization: `Bearer ${apikey}`,
+        },
+        data: payload,
+      }) as Promise<{ status: number; data: unknown }>,
+      UPLOAD_TIMEOUT_MS,
+      'native upload',
+    );
+    const elapsedMs = Date.now() - tUp;
+    if (resp.status < 200 || resp.status >= 300) {
+      return { ok: false, status: resp.status, body: resp.data, elapsedMs };
+    }
+    return { ok: true, status: resp.status, body: resp.data, elapsedMs };
+  } catch (e) {
+    return { ok: false, error: safeStringify(e), elapsedMs: Date.now() - tUp };
+  }
+}
+
 async function handleLocationRefreshPush(source: string) {
   const t0 = Date.now();
   const fgState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
-  pushLog('location_refresh handler START', { source, foregroundState: fgState, t0 });
+  pushLog('location_refresh handler START', {
+    source,
+    foregroundState: fgState,
+    documentHidden: typeof document !== 'undefined' ? document.hidden : null,
+    t0,
+  });
   let uid: string | undefined;
   try {
     pushLog('location_refresh handler before cached uid lookup');
@@ -100,7 +169,7 @@ async function handleLocationRefreshPush(source: string) {
     try {
       cachedUid = await withTimeout(getCachedPushUid(), 2000, 'getCachedPushUid');
     } catch (e) {
-      pushLog('location_refresh handler cached uid lookup FAILED', { error: (e as Error)?.message || String(e) });
+      pushLog('location_refresh handler cached uid lookup FAILED', { error: safeStringify(e) });
     }
     uid = cachedUid ?? undefined;
     pushLog('location_refresh handler cached uid result', { hasUid: !!uid });
@@ -111,87 +180,125 @@ async function handleLocationRefreshPush(source: string) {
 
     pushLog('location_refresh handler before permission check');
     let permState: string = 'unknown';
+    let permRaw: unknown = null;
     try {
       const perm = await withTimeout(geolocation.checkPermission(), 4000, 'checkPermission');
+      permRaw = perm;
       permState = perm.state;
     } catch (e) {
-      pushLog('location_refresh handler permission check FAILED', { error: (e as Error)?.message || String(e) });
+      pushLog('location_refresh handler permission check FAILED', { error: safeStringify(e) });
     }
-    pushLog('location_refresh handler permission result', { permState });
+    pushLog('location_refresh handler permission result', {
+      permState,
+      permRaw: safeStringify(permRaw),
+    });
     if (permState === 'denied') {
       pushLog('location_refresh handler ABORT permission denied');
       return;
     }
 
-    pushLog('location_refresh handler before getCurrentPosition', { timeoutMs: GEO_TIMEOUT_MS });
+    pushLog('location_refresh handler before getCurrentPosition', {
+      timeoutMs: GEO_TIMEOUT_MS,
+      foregroundState: (typeof document !== 'undefined' && document.visibilityState) || 'unknown',
+    });
     const tGeo = Date.now();
     let coords;
+    let geoError: unknown = null;
     try {
-      coords = await withTimeout(geolocation.getCurrentPosition(), GEO_TIMEOUT_MS, 'getCurrentPosition');
+      coords = await withTimeout(
+        geolocation.getCurrentPosition({ timeoutMs: GEO_TIMEOUT_MS, enableHighAccuracy: true }),
+        GEO_TIMEOUT_MS + 2000,
+        'getCurrentPosition',
+      );
     } catch (e) {
+      geoError = e;
       pushLog('location_refresh handler getCurrentPosition FAILED', {
-        error: (e as Error)?.message || String(e),
+        error: safeStringify(e),
+        errorCode: (e as { code?: unknown })?.code ?? null,
+        errorMessage: (e as { message?: unknown })?.message ?? null,
         elapsedMs: Date.now() - tGeo,
         foregroundState: (typeof document !== 'undefined' && document.visibilityState) || 'unknown',
+        documentHidden: typeof document !== 'undefined' ? document.hidden : null,
       });
-      return;
     }
-    pushLog('location_refresh handler getCurrentPosition success', {
-      lat: coords.lat, lng: coords.lng, accuracy: coords.accuracy,
-      elapsedMs: Date.now() - tGeo,
-    });
 
-    pushLog('location_refresh handler before native upload');
-    const tUp = Date.now();
-    try {
-      const { CapacitorHttp } = await import('@capacitor/core');
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/location-refresh-upload`;
-      const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-      const payload = {
-        userId: uid,
-        deviceId: getDeviceId(),
-        latitude: coords.lat,
-        longitude: coords.lng,
-        accuracy: coords.accuracy,
-        timestamp: new Date().toISOString(),
-        source: 'push_location_refresh',
-        devicePlatform: getDeviceInfo().platform,
-      };
-      const resp = await withTimeout(
-        CapacitorHttp.post({
-          url,
-          headers: {
-            'Content-Type': 'application/json',
-            apikey,
-            Authorization: `Bearer ${apikey}`,
-          },
-          data: payload,
-        }) as Promise<{ status: number; data: unknown }>,
-        UPLOAD_TIMEOUT_MS,
-        'native upload',
-      );
-      pushLog('location_refresh handler native upload response', {
-        status: resp.status,
-        body: typeof resp.data === 'string' ? resp.data.slice(0, 200) : resp.data,
-        elapsedMs: Date.now() - tUp,
+    if (coords) {
+      pushLog('location_refresh handler getCurrentPosition success', {
+        lat: coords.lat, lng: coords.lng, accuracy: coords.accuracy,
+        elapsedMs: Date.now() - tGeo,
       });
-      if (resp.status < 200 || resp.status >= 300) {
+
+      pushLog('location_refresh handler before native upload', { kind: 'fresh' });
+      const r = await uploadLocationRefreshPoint({
+        uid,
+        lat: coords.lat,
+        lng: coords.lng,
+        accuracy: coords.accuracy,
+        source: 'push_location_refresh',
+        recordedAt: new Date().toISOString(),
+      });
+      pushLog('location_refresh handler native upload response', {
+        kind: 'fresh',
+        status: r.status, body: r.body, error: r.error, elapsedMs: r.elapsedMs,
+      });
+      if (!r.ok) {
         pushLog('location_refresh handler upload FAILED', {
-          status: resp.status,
-          body: resp.data,
+          kind: 'fresh', status: r.status, body: r.body, error: r.error,
         });
         return;
       }
+      pushLog('location_refresh handler DB updated', { uid, kind: 'fresh' });
+      return;
+    }
+
+    // ---------- Cached fallback ----------
+    pushLog('location_refresh handler trying cached fallback', { reason: safeStringify(geoError) });
+    let cached: Awaited<ReturnType<typeof getLastKnownCoords>> = null;
+    try {
+      cached = await withTimeout(getLastKnownCoords(), 2000, 'getLastKnownCoords');
     } catch (e) {
-      pushLog('location_refresh handler upload FAILED', {
-        error: (e as Error)?.message || String(e),
-        elapsedMs: Date.now() - tUp,
+      pushLog('location_refresh handler cached fallback lookup FAILED', { error: safeStringify(e) });
+    }
+    if (!cached) {
+      pushLog('location_refresh handler ABORT no cached fallback available');
+      return;
+    }
+    const ageMs = Date.now() - (cached.timestamp || 0);
+    pushLog('location_refresh handler cached fallback found', {
+      lat: cached.lat, lng: cached.lng, accuracy: cached.accuracy,
+      timestamp: cached.timestamp, ageMs,
+    });
+    if (ageMs > CACHED_FALLBACK_MAX_AGE_MS) {
+      pushLog('location_refresh handler ABORT cached fallback too old', {
+        ageMs, maxAgeMs: CACHED_FALLBACK_MAX_AGE_MS,
       });
       return;
     }
-    pushLog('location_refresh handler DB updated', { uid });
+
+    pushLog('location_refresh handler before native upload', { kind: 'cached_fallback' });
+    const r = await uploadLocationRefreshPoint({
+      uid,
+      lat: cached.lat,
+      lng: cached.lng,
+      accuracy: cached.accuracy,
+      // NOTE: distinct source so backend/UI never mistakes it for a fresh fix.
+      source: 'push_location_refresh_cached_fallback',
+      // Use the cached timestamp so receivers see the true age.
+      recordedAt: new Date(cached.timestamp).toISOString(),
+    });
+    pushLog('location_refresh handler native upload response', {
+      kind: 'cached_fallback',
+      status: r.status, body: r.body, error: r.error, elapsedMs: r.elapsedMs,
+    });
+    if (!r.ok) {
+      pushLog('location_refresh handler upload FAILED', {
+        kind: 'cached_fallback', status: r.status, body: r.body, error: r.error,
+      });
+      return;
+    }
+    pushLog('location_refresh handler DB updated', { uid, kind: 'cached_fallback', ageMs });
   } catch (e) {
-    pushLog('location_refresh handler FAILED outer', { error: (e as Error)?.message || String(e) });
+    pushLog('location_refresh handler FAILED outer', { error: safeStringify(e) });
   } finally {
     pushLog('location_refresh handler FINALLY', {
       uid: uid ?? null,
