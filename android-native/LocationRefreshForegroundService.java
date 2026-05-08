@@ -21,9 +21,12 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
-import com.google.android.gms.tasks.CancellationTokenSource;
 
 import org.json.JSONObject;
 
@@ -127,48 +130,106 @@ public class LocationRefreshForegroundService extends Service {
     }
 
     private void requestLocationAndUpload(final String userId, final String deviceId) {
-        Log.i(TAG, "NATIVE GPS request started");
+        Log.i(TAG, "NATIVE GPS request started (active updates)");
         try {
-            final CancellationTokenSource cts = new CancellationTokenSource();
+            final FusedLocationProviderClient client =
+                    LocationServices.getFusedLocationProviderClient(this);
+
+            // Активна заявка: high accuracy, бързи интервали, единичен fix.
+            final LocationRequest req = new LocationRequest.Builder(
+                        Priority.PRIORITY_HIGH_ACCURACY, 1000L)
+                    .setMinUpdateIntervalMillis(500L)
+                    .setMaxUpdateDelayMillis(0L)
+                    .setWaitForAccurateLocation(false)
+                    .setMaxUpdates(1)
+                    .build();
+
+            final boolean[] handled = { false };
+            final LocationCallback[] cbRef = new LocationCallback[1];
             final Runnable[] watchdogRef = new Runnable[1];
+
+            final Runnable finishWith = new Runnable() { @Override public void run() {} };
+
+            cbRef[0] = new LocationCallback() {
+                @Override
+                public void onLocationResult(LocationResult result) {
+                    if (handled[0]) return;
+                    Location loc = result != null ? result.getLastLocation() : null;
+                    if (loc == null) {
+                        Log.w(TAG, "NATIVE active update returned null");
+                        return; // изчакай watchdog или следващ update
+                    }
+                    handled[0] = true;
+                    mainHandler.removeCallbacks(watchdogRef[0]);
+                    try { client.removeLocationUpdates(cbRef[0]); } catch (Throwable ignored) {}
+                    Log.i(TAG, "NATIVE GPS active fix lat=" + loc.getLatitude()
+                            + " lng=" + loc.getLongitude() + " acc=" + loc.getAccuracy());
+                    final double lat = loc.getLatitude();
+                    final double lng = loc.getLongitude();
+                    final double acc = loc.getAccuracy();
+                    new Thread(new Runnable() {
+                        @Override public void run() {
+                            uploadPoint(userId, deviceId, lat, lng, acc);
+                            stopSelfSafe();
+                        }
+                    }).start();
+                }
+            };
+
             watchdogRef[0] = new Runnable() {
                 @Override public void run() {
-                    Log.w(TAG, "NATIVE GPS watchdog timeout");
-                    try { cts.cancel(); } catch (Throwable ignored) {}
-                    stopSelfSafe();
+                    if (handled[0]) return;
+                    Log.w(TAG, "NATIVE GPS watchdog timeout — fallback to lastLocation");
+                    try { client.removeLocationUpdates(cbRef[0]); } catch (Throwable ignored) {}
+                    // Fallback: пробвай cached last location, ако има.
+                    try {
+                        client.getLastLocation()
+                            .addOnSuccessListener(new com.google.android.gms.tasks.OnSuccessListener<Location>() {
+                                @Override public void onSuccess(Location loc) {
+                                    if (handled[0]) return;
+                                    handled[0] = true;
+                                    if (loc == null) {
+                                        Log.w(TAG, "NATIVE fallback lastLocation null — abort");
+                                        stopSelfSafe();
+                                        return;
+                                    }
+                                    Log.i(TAG, "NATIVE fallback lastLocation lat=" + loc.getLatitude()
+                                            + " lng=" + loc.getLongitude() + " acc=" + loc.getAccuracy());
+                                    final double lat = loc.getLatitude();
+                                    final double lng = loc.getLongitude();
+                                    final double acc = loc.getAccuracy();
+                                    new Thread(new Runnable() {
+                                        @Override public void run() {
+                                            uploadPoint(userId, deviceId, lat, lng, acc);
+                                            stopSelfSafe();
+                                        }
+                                    }).start();
+                                }
+                            })
+                            .addOnFailureListener(new com.google.android.gms.tasks.OnFailureListener() {
+                                @Override public void onFailure(Exception e) {
+                                    if (handled[0]) return;
+                                    handled[0] = true;
+                                    Log.e(TAG, "NATIVE fallback lastLocation failed", e);
+                                    stopSelfSafe();
+                                }
+                            });
+                    } catch (Throwable t) {
+                        handled[0] = true;
+                        Log.e(TAG, "NATIVE fallback exception", t);
+                        stopSelfSafe();
+                    }
                 }
             };
             mainHandler.postDelayed(watchdogRef[0], GPS_TIMEOUT_MS);
 
-            LocationServices.getFusedLocationProviderClient(this)
-                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.getToken())
-                .addOnSuccessListener(new com.google.android.gms.tasks.OnSuccessListener<Location>() {
-                    @Override public void onSuccess(Location loc) {
-                        mainHandler.removeCallbacks(watchdogRef[0]);
-                        if (loc == null) {
-                            Log.w(TAG, "NATIVE GPS success but null location");
-                            stopSelfSafe();
-                            return;
-                        }
-                        Log.i(TAG, "NATIVE GPS success lat=" + loc.getLatitude() + " lng=" + loc.getLongitude() + " acc=" + loc.getAccuracy());
-                        final double lat = loc.getLatitude();
-                        final double lng = loc.getLongitude();
-                        final double acc = loc.getAccuracy();
-                        new Thread(new Runnable() {
-                            @Override public void run() {
-                                uploadPoint(userId, deviceId, lat, lng, acc);
-                                stopSelfSafe();
-                            }
-                        }).start();
-                    }
-                })
-                .addOnFailureListener(new com.google.android.gms.tasks.OnFailureListener() {
-                    @Override public void onFailure(Exception e) {
-                        mainHandler.removeCallbacks(watchdogRef[0]);
-                        Log.e(TAG, "NATIVE GPS failure", e);
-                        stopSelfSafe();
-                    }
-                });
+            try {
+                client.requestLocationUpdates(req, cbRef[0], Looper.getMainLooper());
+            } catch (SecurityException se) {
+                Log.e(TAG, "NATIVE requestLocationUpdates SecurityException", se);
+                mainHandler.removeCallbacks(watchdogRef[0]);
+                stopSelfSafe();
+            }
         } catch (Throwable t) {
             Log.e(TAG, "NATIVE GPS request exception", t);
             stopSelfSafe();
