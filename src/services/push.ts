@@ -116,20 +116,35 @@ async function uploadLocationRefreshPoint(opts: {
   recordedAt: string;
 }): Promise<{ ok: boolean; status?: number; body?: unknown; error?: string; elapsedMs: number }> {
   const tUp = Date.now();
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/location-refresh-upload`;
+  const deviceId = getDeviceId();
+  const payload = {
+    userId: opts.uid,
+    deviceId,
+    latitude: opts.lat,
+    longitude: opts.lng,
+    accuracy: opts.accuracy,
+    timestamp: opts.recordedAt,
+    source: opts.source,
+    devicePlatform: getDeviceInfo().platform,
+  };
+  pushLog('upload request target', {
+    url,
+    payloadKeys: Object.keys(payload),
+    source: opts.source,
+    hasUserId: !!opts.uid,
+    hasDeviceId: !!deviceId,
+  });
+
+  // Watchdog логове на 5/10/15s — независими от Promise resolve/reject
+  const w5 = setTimeout(() => pushLog('upload pending after 5s', { source: opts.source }), 5000);
+  const w10 = setTimeout(() => pushLog('upload pending after 10s', { source: opts.source }), 10000);
+  const w15 = setTimeout(() => pushLog('upload pending after 15s', { source: opts.source }), 15000);
+  const clearWatchdogs = () => { clearTimeout(w5); clearTimeout(w10); clearTimeout(w15); };
+
   try {
     const { CapacitorHttp } = await import('@capacitor/core');
-    const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/location-refresh-upload`;
     const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-    const payload = {
-      userId: opts.uid,
-      deviceId: getDeviceId(),
-      latitude: opts.lat,
-      longitude: opts.lng,
-      accuracy: opts.accuracy,
-      timestamp: opts.recordedAt,
-      source: opts.source,
-      devicePlatform: getDeviceInfo().platform,
-    };
     const resp = await withTimeout(
       CapacitorHttp.post({
         url,
@@ -139,19 +154,40 @@ async function uploadLocationRefreshPoint(opts: {
           Authorization: `Bearer ${apikey}`,
         },
         data: payload,
-      }) as Promise<{ status: number; data: unknown }>,
+        connectTimeout: UPLOAD_TIMEOUT_MS,
+        readTimeout: UPLOAD_TIMEOUT_MS,
+      } as Parameters<typeof CapacitorHttp.post>[0]) as Promise<{ status: number; data: unknown }>,
       UPLOAD_TIMEOUT_MS,
       'native upload',
     );
+    clearWatchdogs();
     const elapsedMs = Date.now() - tUp;
+    pushLog('upload raw response', {
+      status: resp.status,
+      body: resp.data,
+      elapsedMs,
+      source: opts.source,
+    });
     if (resp.status < 200 || resp.status >= 300) {
       return { ok: false, status: resp.status, body: resp.data, elapsedMs };
     }
     return { ok: true, status: resp.status, body: resp.data, elapsedMs };
   } catch (e) {
-    return { ok: false, error: safeStringify(e), elapsedMs: Date.now() - tUp };
+    clearWatchdogs();
+    const elapsedMs = Date.now() - tUp;
+    const isTimeout = (e as Error)?.message?.includes('timeout');
+    pushLog(isTimeout ? 'upload FAILED timeout' : 'upload FAILED exception', {
+      error: safeStringify(e),
+      stack: (e as Error)?.stack ?? null,
+      elapsedMs,
+      source: opts.source,
+    });
+    return { ok: false, error: safeStringify(e), elapsedMs };
   }
 }
+
+// In-flight guard: само един location_refresh upload едновременно.
+let locationRefreshInFlight = false;
 
 async function handleLocationRefreshPush(source: string) {
   const t0 = Date.now();
