@@ -144,9 +144,6 @@ jobs:
 
       - name: Apply native location service patch (locked-screen refresh)
         if: ${{ inputs.enable_push == 'true' }}
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
         run: |
           chmod +x scripts/patch-android-native-location.sh
           ./scripts/patch-android-native-location.sh
