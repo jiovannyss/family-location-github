@@ -73,6 +73,15 @@ const Index = () => {
     }
     setSelectedMemberId(member.id);
     setMobileTab('map');
+
+    // Помоли peer-а за свежа локация и refetch-ни няколко пъти,
+    // за да хванем INSERT-а дори ако realtime закъснее.
+    void requestPeerLocationRefresh({ force: true });
+    [2000, 5000, 10000].forEach((ms) => {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['circle-members'] });
+      }, ms);
+    });
   };
 
   if (loading) {
