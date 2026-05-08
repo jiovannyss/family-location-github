@@ -288,6 +288,7 @@ class NativePushService implements PushService {
   isSupported() { return true; }
 
   async registerForUser(userId: string): Promise<void> {
+    void setCachedPushUid(userId);
     const invocationId = nextRegisterInvocationId();
     activeRegisterInvocationCount += 1;
 
