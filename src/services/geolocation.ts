@@ -127,17 +127,22 @@ class NativeGeolocation implements GeolocationService {
       return { state: 'unknown' };
     }
   }
-  async getCurrentPosition(): Promise<Coords> {
+  async getCurrentPosition(opts?: GetCurrentPositionOptions): Promise<Coords> {
     const perm = await Geolocation.checkPermissions();
     if (perm.location !== 'granted') {
       const req = await Geolocation.requestPermissions({ permissions: ['location'] });
       if (req.location !== 'granted') throw new Error('Location permission denied');
     }
-    const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 10000 });
-    return {
+    const timeout = opts?.timeoutMs ?? 10000;
+    const enableHighAccuracy = opts?.enableHighAccuracy ?? true;
+    const maximumAge = opts?.maximumAgeMs ?? 0;
+    const pos = await Geolocation.getCurrentPosition({ enableHighAccuracy, timeout, maximumAge });
+    const c: Coords = {
       lat: pos.coords.latitude, lng: pos.coords.longitude,
       accuracy: pos.coords.accuracy ?? null, timestamp: pos.timestamp,
     };
+    void cacheLastKnownCoords(c);
+    return c;
   }
   watchPosition(cb: (coords: Coords) => void, onError?: (err: Error) => void): () => void {
     let watchId: string | null = null;
@@ -155,10 +160,12 @@ class NativeGeolocation implements GeolocationService {
           (pos, err) => {
             if (err) { onError?.(new Error(err.message || 'Location error')); return; }
             if (!pos) return;
-            cb({
+            const c: Coords = {
               lat: pos.coords.latitude, lng: pos.coords.longitude,
               accuracy: pos.coords.accuracy ?? null, timestamp: pos.timestamp,
-            });
+            };
+            void cacheLastKnownCoords(c);
+            cb(c);
           }
         );
       } catch (e) {
