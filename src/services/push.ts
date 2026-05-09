@@ -64,6 +64,14 @@ export async function setCachedPushUid(uid: string | null): Promise<void> {
       await storage.set('fam_user_id', uid);
       const did = getDeviceId();
       if (did) await storage.set('fam_device_id', did);
+      // iOS native SLC bridge също чете supabase URL + platform от
+      // UserDefaults за да POST-ва без необходимост да чете .env по време
+      // на background SLC delegate (когато JS не върви).
+      try {
+        const url = (import.meta as { env?: Record<string, string> }).env?.VITE_SUPABASE_URL;
+        if (url) await storage.set('fam_supabase_url', url);
+        await storage.set('fam_device_platform', nativePlatform());
+      } catch { /* ignore */ }
     } else {
       await storage.remove('fam_user_id');
     }
