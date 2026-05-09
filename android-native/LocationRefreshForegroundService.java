@@ -57,6 +57,7 @@ public class LocationRefreshForegroundService extends Service {
     private static final String PREFS_NAME = "CapacitorStorage";
     private static final String PREFS_USER = "fam_user_id";
     private static final String PREFS_DEVICE = "fam_device_id";
+    private static final String PREFS_BG_MISSING = "fam_bg_perm_missing_at";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean stopped = false;
