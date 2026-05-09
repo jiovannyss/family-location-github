@@ -80,6 +80,18 @@ export function useLocationTracking() {
   const { isSharing } = useSharingState();
   const [currentPosition, setCurrentPosition] = useState<Coords | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Брой последователни грешки — показваме UI чак при ≥2 поредни,
+  // за да скрием преходни (например при включване на „Позволи винаги",
+  // когато native service-ът се рестартира и една заявка може да fail-не).
+  const errorCountRef = useRef(0);
+  const reportError = (msg: string) => {
+    errorCountRef.current += 1;
+    if (errorCountRef.current >= 2) setError(msg);
+  };
+  const clearError = () => {
+    errorCountRef.current = 0;
+    setError(null);
+  };
   const [permissionState, setPermissionState] = useState<
     'granted' | 'denied' | 'prompt' | 'unknown' | null
   >(null);
