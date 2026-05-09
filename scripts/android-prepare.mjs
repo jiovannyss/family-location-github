@@ -297,21 +297,28 @@ function patchNativeLocation() {
   // 3.3b Регистрирай BgLocationBridge Capacitor plugin в MainActivity
   let maSrc = read(mainActivity);
   if (!maSrc.includes('BgLocationBridge.class')) {
-    // Добави import за registerPlugin ако липсва (Capacitor BridgeActivity го има наследен)
-    if (!/import\s+com\.getcapacitor\.BridgeActivity;/.test(maSrc)) {
-      // нищо за вмъкване — BridgeActivity се очаква да е импортиран; ако не е, build ще fail-не явно
+    // Гарантирай import за os.Bundle (за onCreate signature)
+    if (!/import\s+android\.os\.Bundle;/.test(maSrc)) {
+      maSrc = maSrc.replace(
+        /(package\s+[^;]+;\s*)/,
+        `$1\nimport android.os.Bundle;\n`
+      );
     }
-    // Вмъкни registerPlugin преди super.onCreate(...) или след него
     if (/super\.onCreate\([^)]*\);/.test(maSrc)) {
+      // Има onCreate → вмъкни преди super.onCreate
       maSrc = maSrc.replace(
         /(super\.onCreate\([^)]*\);)/,
         `registerPlugin(${pkg}.BgLocationBridge.class);\n        $1`
       );
-      write(mainActivity, maSrc);
-      info('  ✅ MainActivity: registerPlugin(BgLocationBridge.class)');
     } else {
-      info('  ⚠️  MainActivity без super.onCreate — не успях да вмъкна registerPlugin');
+      // Празен MainActivity → инжектирай цял onCreate метод
+      maSrc = maSrc.replace(
+        /(public\s+class\s+MainActivity[^{]*\{)/,
+        `$1\n    @Override\n    public void onCreate(Bundle savedInstanceState) {\n        registerPlugin(${pkg}.BgLocationBridge.class);\n        super.onCreate(savedInstanceState);\n    }\n`
+      );
     }
+    write(mainActivity, maSrc);
+    info('  ✅ MainActivity: registerPlugin(BgLocationBridge.class)');
   } else {
     info('  = MainActivity вече регистрира BgLocationBridge');
   }
