@@ -13,11 +13,14 @@ import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { isNative, nativePlatform } from '@/services/platform';
 import { useSharingState } from '@/hooks/useLocation';
 import { useBackgroundPermissionWatcher } from '@/hooks/useBackgroundPermissionWatcher';
+import { platformLabels } from '@/services/backgroundLocationPermission';
 import BackgroundUpgradeDialog from './BackgroundUpgradeDialog';
 
 export default function BackgroundPermissionBanner() {
   const { isSharing } = useSharingState();
-  const enabled = isNative() && nativePlatform() === 'android' && isSharing;
+  const platform = nativePlatform();
+  const enabled = isNative() && (platform === 'android' || platform === 'ios') && isSharing;
+  const labels = platformLabels();
   const { status, autoPromptForFailure, dismissAutoPrompt } =
     useBackgroundPermissionWatcher(enabled);
   const [open, setOpen] = useState(false);
@@ -46,7 +49,7 @@ export default function BackgroundPermissionBanner() {
               Локацията се споделя само при отворено приложение
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Натиснете, за да активирате „Позволи винаги" за заключен екран.
+              Натиснете, за да активирате „{labels.alwaysOption}" за заключен екран.
             </p>
           </div>
           <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />

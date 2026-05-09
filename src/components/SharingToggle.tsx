@@ -13,6 +13,8 @@ import BackgroundUpgradeDialog from './BackgroundUpgradeDialog';
 import {
   ensureForegroundLocation,
   checkBackgroundPermission,
+  startNativeBackgroundMonitoring,
+  stopNativeBackgroundMonitoring,
 } from '@/services/backgroundLocationPermission';
 
 const BG_RATIONALE_KEY = 'bg_location_rationale_shown_v1';
@@ -32,10 +34,15 @@ export default function SharingToggle() {
   }, []);
 
   const maybePromptBackgroundUpgrade = async () => {
-    if (!isNative() || nativePlatform() !== 'android') return;
+    const platform = nativePlatform();
+    if (!isNative() || (platform !== 'android' && platform !== 'ios')) return;
     try {
       const status = await checkBackgroundPermission();
-      if (status.background === 'granted') return;
+      if (status.background === 'granted') {
+        // На iOS — стартирай SLC при потвърдено Always
+        if (platform === 'ios') void startNativeBackgroundMonitoring();
+        return;
+      }
       const lastStr = await storage.get(BG_UPGRADE_LAST_PROMPT_KEY);
       const last = lastStr ? Number(lastStr) : 0;
       if (Date.now() - last < BG_UPGRADE_COOLDOWN_MS) return;

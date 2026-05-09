@@ -34,7 +34,8 @@ export function useBackgroundPermissionWatcher(enabled: boolean) {
   }, []);
 
   useEffect(() => {
-    if (!enabled || !isNative() || nativePlatform() !== 'android') return;
+    const platform = nativePlatform();
+    if (!enabled || !isNative() || (platform !== 'android' && platform !== 'ios')) return;
 
     disposedRef.current = false;
     void refresh();

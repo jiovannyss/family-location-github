@@ -1,12 +1,13 @@
 /**
- * Wrapper над native BgLocationBridge plugin (Android) с web fallback.
+ * Wrapper над native bridge plugins за пълно background-location управление.
  *
- * На Android 11+ Google не позволява системният prompt да съдържа опция
- * „Allow all the time". Така че:
- *   1) Първо искаме foreground (`location`) през @capacitor/geolocation.
- *   2) После проверяваме background през този bridge.
- *   3) Ако background е denied → показваме UI диалог, който води
- *      потребителя към системните настройки.
+ * Android (`BgLocationBridge`): на 11+ системният prompt няма "Allow all the time"
+ * опция — затова имаме отделен upgrade flow през настройките.
+ *
+ * iOS (`IosLocationBridge`): системата дава достъп до "When In Use" първо,
+ * а "Always" — само със втори, отделен prompt (или ръчно в Settings).
+ * Нашият bridge експозира status (`authorizedAlways` vs `authorizedWhenInUse`),
+ * `requestAlways()` и `openAppSettings()`.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
@@ -19,6 +20,8 @@ export interface BgPermissionStatus {
   background: PermState;
   /** Timestamp (ms) кога нативният service последно е failвал заради липсваща background permission. 0 = няма. */
   missingDetectedAt: number;
+  /** Платформо-специфичен debug стринг — за UI логи */
+  rawStatus?: string;
 }
 
 interface BgBridgePlugin {
@@ -28,10 +31,24 @@ interface BgBridgePlugin {
   clearMissingFlag(): Promise<void>;
 }
 
-const Bridge = registerPlugin<BgBridgePlugin>('BgLocationBridge');
+interface IosBridgePlugin {
+  check(): Promise<{ foreground: string; background: string; rawStatus: string; missingDetectedAt: number }>;
+  requestForeground(): Promise<{ foreground: string }>;
+  requestAlways(): Promise<{ background: string }>;
+  openAppSettings(): Promise<void>;
+  startSlc(): Promise<{ started: boolean }>;
+  stopSlc(): Promise<void>;
+  clearMissingFlag(): Promise<void>;
+}
+
+const AndroidBridge = registerPlugin<BgBridgePlugin>('BgLocationBridge');
+const IosBridge = registerPlugin<IosBridgePlugin>('IosLocationBridge');
 
 function isAndroidNative(): boolean {
   return isNative() && nativePlatform() === 'android';
+}
+function isIosNative(): boolean {
+  return isNative() && nativePlatform() === 'ios';
 }
 
 function normalize(v: string | undefined): PermState {
@@ -41,14 +58,10 @@ function normalize(v: string | undefined): PermState {
 }
 
 /**
- * Поискай foreground (`location`) — стандартният Capacitor flow.
- * Връща финалното състояние.
+ * Поискай foreground (`When In Use` на iOS, `location` на Android).
  */
 export async function ensureForegroundLocation(): Promise<PermState> {
-  if (!isNative()) {
-    // Web: при getCurrentPosition браузърът сам ще покаже prompt
-    return 'unknown';
-  }
+  if (!isNative()) return 'unknown';
   try {
     const cur = await Geolocation.checkPermissions();
     if (cur.location === 'granted') return 'granted';
@@ -60,60 +73,130 @@ export async function ensureForegroundLocation(): Promise<PermState> {
 }
 
 export async function checkBackgroundPermission(): Promise<BgPermissionStatus> {
-  if (!isAndroidNative()) {
-    // iOS обработва background чрез own „Always" prompt в Geolocation;
-    // web няма background. За тези платформи приемаме че foreground = всичко.
+  if (isAndroidNative()) {
     try {
-      const cur = await Geolocation.checkPermissions();
-      const fg = normalize(cur.location);
-      return { foreground: fg, background: fg, missingDetectedAt: 0 };
+      const r = await AndroidBridge.check();
+      return {
+        foreground: normalize(r.foreground),
+        background: normalize(r.background),
+        missingDetectedAt: r.missingDetectedAt || 0,
+      };
     } catch {
       return { foreground: 'unknown', background: 'unknown', missingDetectedAt: 0 };
     }
   }
+  if (isIosNative()) {
+    try {
+      const r = await IosBridge.check();
+      return {
+        foreground: normalize(r.foreground),
+        background: normalize(r.background),
+        missingDetectedAt: r.missingDetectedAt || 0,
+        rawStatus: r.rawStatus,
+      };
+    } catch {
+      // Bridge може да не е регистриран още (ios-prepare.mjs не е пуснат)
+      // → fallback на Geolocation API който дава само foreground.
+      try {
+        const cur = await Geolocation.checkPermissions();
+        const fg = normalize(cur.location);
+        return { foreground: fg, background: fg, missingDetectedAt: 0 };
+      } catch {
+        return { foreground: 'unknown', background: 'unknown', missingDetectedAt: 0 };
+      }
+    }
+  }
+  // web
   try {
-    const r = await Bridge.check();
-    return {
-      foreground: normalize(r.foreground),
-      background: normalize(r.background),
-      missingDetectedAt: r.missingDetectedAt || 0,
-    };
+    const cur = await Geolocation.checkPermissions();
+    const fg = normalize(cur.location);
+    return { foreground: fg, background: fg, missingDetectedAt: 0 };
   } catch {
     return { foreground: 'unknown', background: 'unknown', missingDetectedAt: 0 };
   }
 }
 
 /**
- * Опит да поискаме background permission. На Android 11+ това НЕ показва
- * диалог а отваря системните настройки на приложението — затова обикновено
- * предпочитаме `openAppSettings()` от UI с ясно обяснение.
+ * Поискай background ("Always" на iOS, ACCESS_BACKGROUND_LOCATION на Android).
+ *
+ * Android 11+: системата отваря Settings вместо да покаже prompt.
+ * iOS: ако имаме WhenInUse, показва "Change to Always Allow" prompt.
  */
 export async function requestBackgroundPermission(): Promise<PermState> {
-  if (!isAndroidNative()) return 'unknown';
-  try {
-    const r = await Bridge.requestBackground();
-    return normalize(r.background);
-  } catch {
-    return 'unknown';
+  if (isAndroidNative()) {
+    try {
+      const r = await AndroidBridge.requestBackground();
+      return normalize(r.background);
+    } catch { return 'unknown'; }
   }
+  if (isIosNative()) {
+    try {
+      const r = await IosBridge.requestAlways();
+      return normalize(r.background);
+    } catch { return 'unknown'; }
+  }
+  return 'unknown';
 }
 
 export async function openAppSettings(): Promise<void> {
-  if (!isAndroidNative()) throw new Error('Not Android native');
-  // Не catch-ваме — нека caller покаже toast при провал (например ако native
-  // bridge не е регистриран в MainActivity).
-  await Bridge.openAppSettings();
+  if (isAndroidNative()) {
+    await AndroidBridge.openAppSettings();
+    return;
+  }
+  if (isIosNative()) {
+    await IosBridge.openAppSettings();
+    return;
+  }
+  throw new Error('Not native');
 }
 
 export async function clearBackgroundMissingFlag(): Promise<void> {
-  if (!isAndroidNative()) return;
-  try { await Bridge.clearMissingFlag(); } catch { /* ignore */ }
+  if (isAndroidNative()) {
+    try { await AndroidBridge.clearMissingFlag(); } catch { /* ignore */ }
+    return;
+  }
+  if (isIosNative()) {
+    try { await IosBridge.clearMissingFlag(); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Стартира Significant Location Changes на iOS — единственият начин да
+ * получаваме locations след force-quit на приложението. На Android — no-op
+ * (там FCM data push + native foreground service вършат същата работа).
+ */
+export async function startNativeBackgroundMonitoring(): Promise<void> {
+  if (!isIosNative()) return;
+  try {
+    await IosBridge.startSlc();
+  } catch (e) {
+    console.warn('[bg-perm] iOS startSlc failed', e);
+  }
+}
+
+export async function stopNativeBackgroundMonitoring(): Promise<void> {
+  if (!isIosNative()) return;
+  try { await IosBridge.stopSlc(); } catch { /* ignore */ }
 }
 
 export function isBackgroundPermissionRelevant(): boolean {
-  // UI показваме само на Android native (на iOS Capacitor Geolocation
-  // се грижи за това чрез системния "Always" prompt).
-  return isAndroidNative();
+  // Показваме UI на двете нативни платформи. На web — няма background.
+  return isAndroidNative() || isIosNative();
+}
+
+export function platformLabels() {
+  if (isIosNative()) {
+    return {
+      alwaysOption: 'Винаги',
+      settingsPath: 'Настройки → Поверителност → Услуги за локация → Семейна локация → Винаги',
+      restrictionNote: 'iOS изисква отделно потвърждение за достъп „Винаги" — затова избора не е в първоначалния прозорец.',
+    };
+  }
+  return {
+    alwaysOption: 'Позволи винаги',
+    settingsPath: 'Настройки → Apps → Семейна локация → Permissions → Location → Allow all the time',
+    restrictionNote: 'Android (версия 11 и нагоре) не позволява тази опция да бъде показана в първоначалния прозорец — затова е нужна ръчна стъпка от настройките.',
+  };
 }
 
 // Suppress unused-import warning for Capacitor (тип guard)

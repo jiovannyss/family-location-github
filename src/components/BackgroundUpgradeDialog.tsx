@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
-import { openAppSettings } from '@/services/backgroundLocationPermission';
+import { openAppSettings, platformLabels } from '@/services/backgroundLocationPermission';
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
@@ -26,6 +26,7 @@ interface Props {
 }
 
 export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure }: Props) {
+  const labels = platformLabels();
   const handleOpenSettings = async () => {
     try {
       await openAppSettings();
@@ -34,7 +35,7 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
       console.error('[bg-perm] openAppSettings failed', e);
       toast({
         title: 'Не можах да отворя настройките',
-        description: 'Отворете ръчно: Настройки → Apps → Семейна локация → Permissions → Location → Allow all the time.',
+        description: `Отворете ръчно: ${labels.settingsPath}.`,
         variant: 'destructive',
       });
     }
@@ -51,7 +52,7 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
             Още една стъпка за пълно споделяне
           </DialogTitle>
           <DialogDescription className="text-center">
-            Активирайте „Позволи винаги" в настройките
+            Активирайте „{labels.alwaysOption}" в настройките
           </DialogDescription>
         </DialogHeader>
 
@@ -73,7 +74,7 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
           <p className="text-sm text-foreground">
             В момента вашата локация се споделя <strong>само докато приложението е отворено</strong>.
             За да я виждат членовете на кръга и при заключен екран или когато приложението не е стартирано,
-            трябва ръчно да изберете опцията <strong>„Позволи винаги" / „Allow all the time"</strong>.
+            трябва ръчно да изберете опцията <strong>„{labels.alwaysOption}"</strong>.
           </p>
 
           <div className="rounded-xl border border-border bg-muted/40 p-3 space-y-2">
@@ -82,14 +83,13 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
             </p>
             <ol className="space-y-2 text-sm">
               <Step n={1} text={'Натиснете „Отвори настройки" по-долу'} />
-              <Step n={2} text={'Изберете „Permissions" → „Location"'} />
-              <Step n={3} text={'Маркирайте „Allow all the time" / „Позволи винаги"'} />
+              <Step n={2} text={'Намерете секцията „Локация" / „Location"'} />
+              <Step n={3} text={`Маркирайте „${labels.alwaysOption}"`} />
             </ol>
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Android (версия 11 и нагоре) не позволява тази опция да бъде показана в първоначалния прозорец —
-            затова е нужна ръчна стъпка от настройките.
+            {labels.restrictionNote}
           </p>
         </motion.div>
 
