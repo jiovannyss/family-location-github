@@ -294,6 +294,28 @@ function patchNativeLocation() {
     info(`  + ${f}`);
   }
 
+  // 3.3b Регистрирай BgLocationBridge Capacitor plugin в MainActivity
+  let maSrc = read(mainActivity);
+  if (!maSrc.includes('BgLocationBridge.class')) {
+    // Добави import за registerPlugin ако липсва (Capacitor BridgeActivity го има наследен)
+    if (!/import\s+com\.getcapacitor\.BridgeActivity;/.test(maSrc)) {
+      // нищо за вмъкване — BridgeActivity се очаква да е импортиран; ако не е, build ще fail-не явно
+    }
+    // Вмъкни registerPlugin преди super.onCreate(...) или след него
+    if (/super\.onCreate\([^)]*\);/.test(maSrc)) {
+      maSrc = maSrc.replace(
+        /(super\.onCreate\([^)]*\);)/,
+        `registerPlugin(${pkg}.BgLocationBridge.class);\n        $1`
+      );
+      write(mainActivity, maSrc);
+      info('  ✅ MainActivity: registerPlugin(BgLocationBridge.class)');
+    } else {
+      info('  ⚠️  MainActivity без super.onCreate — не успях да вмъкна registerPlugin');
+    }
+  } else {
+    info('  = MainActivity вече регистрира BgLocationBridge');
+  }
+
   // 3.4 Gradle dependencies (само play-services-location;
   //     HTTP се прави с HttpURLConnection от JDK -> няма okhttp).
   const deps = [
