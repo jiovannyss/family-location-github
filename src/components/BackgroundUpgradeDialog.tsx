@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
-import { openAppSettings } from '@/services/backgroundLocationPermission';
+import { openAppSettings, platformLabels } from '@/services/backgroundLocationPermission';
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
