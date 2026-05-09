@@ -134,44 +134,15 @@ function patchAppDelegate() {
     return;
   }
 
-  // Capacitor v5+ — bridge се създава в SceneDelegate или директно в
-  // didFinishLaunching. Регистрираме чрез extension + swizzle на bridge init,
-  // или просто инжектираме в application(_:didFinishLaunchingWithOptions:).
-  //
-  // Capacitor авто-открива @objc(IosLocationBridge) класове САМО ако те са
-  // в pod-а или регистрирани ръчно. За app-таргетен Swift файл — ръчна
-  // регистрация е надеждна.
-  //
-  // Подход: добавяме observer за CAPBridge ready нотификация и регистрираме там.
+  // NOTE: Старият observer `.capacitorViewControllerLoaded` не съществува в
+  // Capacitor 7 и чупи build-а. Не patch-ваме AppDelegate с невалиден код.
+  // Регистрацията трябва да стане през custom CAPBridgeViewController
+  // override на `capacitorDidLoad()`.
 
-  const importLine = 'import Capacitor';
-  if (!src.includes(importLine)) {
-    // вмъкваме след първия import
-    src = src.replace(/import UIKit/, `import UIKit\n${importLine}`);
-  }
-
-  // Намираме application(_:didFinishLaunchingWithOptions:)
-  const launchPattern = /func application\(_ application: UIApplication, didFinishLaunchingWithOptions[^{]*\{/;
-  if (!launchPattern.test(src)) {
-    info('   ⚠ Не намерих didFinishLaunchingWithOptions — ще добавя observer на края');
-  }
-
-  const observerSnippet = `
-        ${MARK}
-        // Регистрирай native plugin за background location/SLC.
-        // Capacitor пуска "capacitorViewControllerLoaded" нотификация когато bridge е готов.
-        NotificationCenter.default.addObserver(forName: .capacitorViewControllerLoaded, object: nil, queue: .main) { _ in
-            if let bridge = (UIApplication.shared.delegate as? AppDelegate)?.window?.rootViewController as? CAPBridgeViewController {
-                bridge.bridge?.registerPluginInstance(IosLocationBridge())
-                NSLog("[FamLocIOS] IosLocationBridge registered with Capacitor bridge")
-            }
-        }
-`;
-
-  src = src.replace(launchPattern, (m) => m + observerSnippet);
+  src = src.replace(/return true/, `${MARK}\n        return true`);
 
   write(APP_DELEGATE, src);
-  info('   ✓ AppDelegate patched (registers IosLocationBridge on bridge ready)');
+  info('   ✓ AppDelegate marked without injecting deprecated Capacitor observer');
 }
 
 // =========================================================================
