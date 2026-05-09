@@ -25,10 +25,26 @@ export default function SharingToggle() {
   const { canRequest, request: requestNotifPermission } = useNotificationPermission();
   const [rationaleOpen, setRationaleOpen] = useState(false);
   const [rationaleShown, setRationaleShown] = useState<boolean | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   useEffect(() => {
     storage.get(BG_RATIONALE_KEY).then((v) => setRationaleShown(v === '1'));
   }, []);
+
+  const maybePromptBackgroundUpgrade = async () => {
+    if (!isNative() || nativePlatform() !== 'android') return;
+    try {
+      const status = await checkBackgroundPermission();
+      if (status.background === 'granted') return;
+      const lastStr = await storage.get(BG_UPGRADE_LAST_PROMPT_KEY);
+      const last = lastStr ? Number(lastStr) : 0;
+      if (Date.now() - last < BG_UPGRADE_COOLDOWN_MS) return;
+      await storage.set(BG_UPGRADE_LAST_PROMPT_KEY, String(Date.now()));
+      setUpgradeOpen(true);
+    } catch (e) {
+      console.warn('[SharingToggle] background check failed', e);
+    }
+  };
 
   const proceedToggle = (checked: boolean) => {
     toggleSharing(checked, {
@@ -36,6 +52,12 @@ export default function SharingToggle() {
         if (checked) {
           toast.success('Споделянето на местоположение е включено');
           if (canRequest) void requestNotifPermission();
+          // След като foreground е дадено и sharing е on → провери background
+          // и ако липсва, покажи upgrade диалога.
+          void (async () => {
+            await ensureForegroundLocation();
+            await maybePromptBackgroundUpgrade();
+          })();
         } else {
           toast.info('Споделянето на местоположение е изключено');
         }
