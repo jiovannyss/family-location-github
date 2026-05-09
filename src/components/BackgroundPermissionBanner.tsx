@@ -13,11 +13,14 @@ import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { isNative, nativePlatform } from '@/services/platform';
 import { useSharingState } from '@/hooks/useLocation';
 import { useBackgroundPermissionWatcher } from '@/hooks/useBackgroundPermissionWatcher';
+import { platformLabels } from '@/services/backgroundLocationPermission';
 import BackgroundUpgradeDialog from './BackgroundUpgradeDialog';
 
 export default function BackgroundPermissionBanner() {
   const { isSharing } = useSharingState();
-  const enabled = isNative() && nativePlatform() === 'android' && isSharing;
+  const platform = nativePlatform();
+  const enabled = isNative() && (platform === 'android' || platform === 'ios') && isSharing;
+  const labels = platformLabels();
   const { status, autoPromptForFailure, dismissAutoPrompt } =
     useBackgroundPermissionWatcher(enabled);
   const [open, setOpen] = useState(false);
