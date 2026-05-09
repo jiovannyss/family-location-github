@@ -61,25 +61,6 @@ export default function ResetPassword() {
         return;
       }
 
-      const code = search.get('code');
-      if (search.get('type') === 'recovery' && code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-
-        if (error) {
-          toast.error('Линкът за смяна на парола е невалиден или е изтекъл');
-          navigate('/auth', { replace: true });
-          return;
-        }
-
-        window.history.replaceState({}, document.title, window.location.pathname);
-
-        if (active) {
-          setReady(true);
-        }
-
-        return;
-      }
-
       const tokenHash = search.get('token_hash');
       if (search.get('type') === 'recovery' && tokenHash) {
         const { error } = await supabase.auth.verifyOtp({
@@ -99,6 +80,35 @@ export default function ResetPassword() {
           setReady(true);
         }
 
+        return;
+      }
+
+      const legacyToken = search.get('token');
+      if (search.get('type') === 'recovery' && legacyToken) {
+        const { error } = await supabase.auth.verifyOtp({
+          type: 'recovery' as RecoveryOtpType,
+          token_hash: legacyToken,
+        });
+
+        if (error) {
+          toast.error('Линкът за смяна на парола е невалиден или е изтекъл');
+          navigate('/auth', { replace: true });
+          return;
+        }
+
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (active) {
+          setReady(true);
+        }
+
+        return;
+      }
+
+      const code = search.get('code');
+      if (search.get('type') === 'recovery' && code) {
+        toast.error('Този стар линк за смяна на парола вече не е валиден. Заявете нов имейл.');
+        navigate('/auth', { replace: true });
         return;
       }
 
