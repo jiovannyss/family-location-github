@@ -137,6 +137,22 @@ public class LocationRefreshForegroundService extends Service {
             Log.i(TAG, "NATIVE perms bgLocation=" + bgGranted
                     + " gpsProvider=" + gpsEnabled + " networkProvider=" + netEnabled);
 
+            // Early abort: ако background-location липсва на Android 10+, GPS
+            // активни ъпдейти ще fail-нат при заключен екран. Записваме flag,
+            // който UI ще прочете и ще покаже upgrade dialog при следващо
+            // отваряне на app-а.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !bgGranted) {
+                try {
+                    getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        .edit()
+                        .putLong(PREFS_BG_MISSING, System.currentTimeMillis())
+                        .apply();
+                } catch (Throwable ignored) {}
+                Log.w(TAG, "NATIVE ABORT: background location permission missing — open app settings");
+                stopSelfSafe();
+                return START_NOT_STICKY;
+            }
+
             SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
             String userId = prefs.getString(PREFS_USER, null);
             String deviceId = prefs.getString(PREFS_DEVICE, null);
