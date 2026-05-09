@@ -52,6 +52,16 @@ for f in "$NATIVE_DIR"/*.java; do
   echo "  + $base"
 done
 
+# 2c) Регистрирай BgLocationBridge plugin в MainActivity
+if ! grep -q "BgLocationBridge.class" "$MAIN_ACTIVITY"; then
+  if grep -q "super.onCreate(" "$MAIN_ACTIVITY"; then
+    perl -i -0777 -pe "s|(super\.onCreate\([^)]*\);)|registerPlugin(${PKG}.BgLocationBridge.class);\n        \$1|" "$MAIN_ACTIVITY"
+    echo "  ✅ MainActivity: registerPlugin(BgLocationBridge.class)"
+  else
+    echo "  ⚠️  MainActivity без super.onCreate — не успях да вмъкна registerPlugin"
+  fi
+fi
+
 # 3) Gradle dependencies (само play-services-location; HTTP е HttpURLConnection)
 add_dep() {
   local dep="$1"

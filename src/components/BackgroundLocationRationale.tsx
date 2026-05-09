@@ -8,7 +8,7 @@
  * Текстовете са BG + EN едновременно за store ревюъри.
  */
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Shield, Users, Power } from 'lucide-react';
+import { MapPin, Shield, Users, Power, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
@@ -72,6 +72,23 @@ export default function BackgroundLocationRationale({ open, onAccept, onDecline 
             />
           </motion.div>
         </AnimatePresence>
+
+        <div className="mt-3 p-3 rounded-lg bg-warning/10 border border-warning/30 flex gap-2">
+          <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <p className="font-medium text-foreground">
+              Важно за Android: процесът има 2 стъпки
+            </p>
+            <p className="text-muted-foreground">
+              Системният прозорец показва само <strong>„Докато използвам приложението"</strong>,
+              <strong> „Само този път"</strong> и <strong>„Откажи"</strong> — опцията
+              <strong> „Позволи винаги"</strong> НЕ присъства там (така е по дизайн на Android 11+).
+              След като изберете „Докато използвам", ще ви покажем втора стъпка как да активирате
+              „Позволи винаги" от настройките — нужна е, за да виждат членовете на кръга
+              локацията ви, докато телефонът е заключен.
+            </p>
+          </div>
+        </div>
 
         <div className="flex flex-col gap-2 pt-2">
           <Button onClick={onAccept} size="lg" className="w-full">
