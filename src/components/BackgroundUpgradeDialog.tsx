@@ -72,9 +72,9 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
               Как да я активирате
             </p>
             <ol className="space-y-2 text-sm">
-              <Step n={1} text="Натиснете „Отвори настройки" по-долу" />
-              <Step n={2} text="Изберете „Permissions" → „Location"" />
-              <Step n={3} text='Маркирайте „Allow all the time" / „Позволи винаги"' />
+              <Step n={1} text={'Натиснете „Отвори настройки" по-долу'} />
+              <Step n={2} text={'Изберете „Permissions" → „Location"'} />
+              <Step n={3} text={'Маркирайте „Allow all the time" / „Позволи винаги"'} />
             </ol>
           </div>
 
