@@ -90,7 +90,7 @@ export function useLocationTracking() {
   };
   const clearError = () => {
     errorCountRef.current = 0;
-    setError(null);
+    clearError();
   };
   const [permissionState, setPermissionState] = useState<
     'granted' | 'denied' | 'prompt' | 'unknown' | null
@@ -126,11 +126,11 @@ export function useLocationTracking() {
         .then((coords) => {
           if (disposed) return;
           setCurrentPosition(coords);
-          setError(null);
+          clearError();
         })
         .catch((err: unknown) => {
           if (!disposed) {
-            setError(err instanceof Error ? err.message : 'Location error');
+            reportError(err instanceof Error ? err.message : 'Location error');
           }
         });
     }).then((h) => {
@@ -187,11 +187,11 @@ export function useLocationTracking() {
         const coords = await geolocation.getCurrentPosition();
         if (cancelled) return;
         setCurrentPosition(coords);
-        setError(null);
+        clearError();
         await sendPos(coords);
       } catch (err: unknown) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Location error');
+          reportError(err instanceof Error ? err.message : 'Location error');
         }
         console.error('Location update failed:', err);
       }
@@ -204,11 +204,11 @@ export function useLocationTracking() {
         (coords) => {
           if (cancelled) return;
           setCurrentPosition(coords);
-          setError(null);
+          clearError();
           void sendPos(coords);
         },
         (err) => {
-          if (!cancelled) setError(err.message);
+          if (!cancelled) reportError(err.message);
         }
       ).then((h) => { bgHandle = h; if (cancelled) void h.stop(); });
     } else {
