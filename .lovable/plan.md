@@ -1,127 +1,126 @@
-## Контекст и важно ограничение от Android
 
-На **Android 11+ (API 30+)** Google НЕ позволява системният prompt да показва опция „Allow all the time" заедно с другите опции. Това е твърдо правило на платформата — не може да се заобиколи нито с код, нито с конфигурация, нито с друг permission API. Системата винаги показва само:
+# iOS background location — паритет с Android
 
-- Докато използвам приложението
-- Само този път
-- Откажи
+## Защо ти трябва Mac
+iOS приложенията **не могат** да се компилират никъде освен на macOS — Xcode (Apple's compiler + simulator + signing tools) върви само на Mac. Linux/Windows физически не могат. Ще използваме MacBook-а за:
+1. `npx cap add ios` + `npx cap sync ios`
+2. Отваряне на проекта в Xcode (`npx cap open ios`)
+3. Signing (Apple ID), Capabilities, Info.plist
+4. Build → симулатор / физически iPhone / TestFlight
 
-За да получим „Allowed all the time", Android задължава **двустъпков (incremental) flow**:
+## Какво вече е готово в repo-то
+- `capacitor.config.ts` — iOS секцията.
+- `resources/IOS_READINESS.md` — checklist за Info.plist, Capabilities, App ID.
+- `send-push` edge функцията използва **FCM v1**, който маршрутизира автоматично към **APNs** (Apple) когато токенът е iOS — т.е. същият код, който праща Android push, ще праща и iOS push, **след като качим APNs Auth Key (.p8) в Firebase Console**.
+- Foreground tracking чрез `@capacitor/geolocation` вече работи на iOS off-the-shelf.
 
-1. Първо се иска `ACCESS_FINE_LOCATION` (foreground) → потребителят избира една от трите опции горе.
-2. Едва след като foreground е дадено, приложението може да поиска `ACCESS_BACKGROUND_LOCATION` отделно. На Android 11+ това **НЕ показва диалог** — операционната система отваря директно екрана с настройки на приложението, където има 4-та опция „Allow all the time", и потребителят трябва ръчно да я избере.
+## Какво липсва за паритет с Android
 
-Затова не можем „да я има тази опция в първия prompt и да е маркирана по дифолт" — това е забранено от Google. Това, което **можем** и **трябва** да направим, е да водим потребителя през този двустъпков процес с ясни обяснения на български на всяка стъпка.
+На Android правим: **FCM data push → буди native foreground service → взима 1 GPS fix → upload → spi**. На iOS имаме два паралелни механизма за същото, защото iOS е по-рестриктивен:
 
----
+### Механизъм A — Continuous background tracking (app не е force-killed)
+`@capacitor/geolocation` `watchPosition` с `enableHighAccuracy` **продължава** да тиктака на заключен екран и в background, ако в Xcode е включен `UIBackgroundModes: location`. Активира се автоматично, без push.
 
-## План: ясен onboarding за background location
+### Механизъм B — Wake-up след force-kill: Significant Location Changes (SLC)
+Apple дава **един-единствен** механизъм, който буди убито приложение при движение: `CLLocationManager.startMonitoringSignificantLocationChanges()`. Работи на ~500м granularity, нула батерия. Това е iOS-аналогът на Android-ския background service.
 
-### Step 1 — Подобрен rationale (преди първия системен prompt)
+### Механизъм C — On-demand push refresh (peer натиска бутон „опресни")
+Silent push (`content-available: 1` + `apns-priority: 5`) → iOS буди приложението за ~30s background time → правим `requestLocation()` → upload. Работи когато приложението е alive (background/closed-but-suspended); **не** работи след force-quit (Apple ограничение, нищо не може да се направи).
 
-Файл: `src/components/BackgroundLocationRationale.tsx`
+## План за изпълнение
 
-Добавяме секция, която предупреждава предварително, че:
-- Системният прозорец ще покаже **3 опции** (без „Винаги")
-- Това е нормално за Android 11+
-- След като дадете „Докато използвам приложението", ще ви водим към втора стъпка за „Винаги"
-- Без „Винаги" другите членове **няма да виждат локацията ви, когато екранът е заключен или приложението е затворено**
+### 1. Frontend конфиг
+- `capacitor.config.ts` — добавяме `ios.backgroundColor`, нищо повече.
+- `src/services/backgroundGeo.ts` — `@capacitor-community/background-geolocation` вече се използва и работи на iOS, но **трябва** на iOS да поискаме `Always` permission (не само `When In Use`). Логиката от `backgroundLocationPermission.ts` ще се разшири с iOS branch, който вика Geolocation requestPermissions с `aliases: ['location']` → след това проверява дали iOS статусът е „authorizedAlways" (ако е „authorizedWhenInUse", показваме upgrade dialog аналогично на Android).
 
-### Step 2 — Реална проверка за background permission след foreground prompt
+### 2. Native iOS Swift plugin: `SlcBridge`
+Създаваме `ios-native/SlcBridge.swift` (паралел на `BgLocationBridge.java`):
+- `start()` → `CLLocationManager.startMonitoringSignificantLocationChanges()`
+- `stop()` → `stopMonitoringSignificantLocationChanges()`
+- delegate `didUpdateLocations` → POST към `/functions/v1/location-refresh-upload` (същата edge функция, която Android service-ът ползва)
+- Чете JWT token от `UserDefaults` (записан от JS при login)
+- Регистрира се чрез `AppDelegate.swift` patch
+- Скрипт `scripts/ios-prepare.mjs` — паралел на `android-prepare.mjs` — копира Swift файла в `ios/App/App/` и инжектира registerPlugin в `AppDelegate`
 
-Нов файл: `src/services/backgroundLocationPermission.ts`
+### 3. Push wake-up (механизъм C)
+- `send-push/index.ts` — вече праща към APNs автоматично. Добавяме само нов code-path: когато payload е „location_refresh" (peer натиска бутон), праща `apns: { payload: { aps: { 'content-available': 1 } } }` БЕЗ alert/sound — silent push.
+- В `src/services/push.ts` (или нов native iOS handler) при получаване на silent push с `type=location_refresh` → стартира `Geolocation.getCurrentPosition()` → upload през съществуващия `uploadLocationPoint`.
 
-Функция `ensureBackgroundLocation()` която:
-1. Проверява текущото състояние през `Geolocation.checkPermissions()` (Capacitor връща `coarseLocation` и `location`).
-2. На native + Android, ако foreground е granted, проверява чрез нативен bridge дали `ACCESS_BACKGROUND_LOCATION` е дадено. Ако Capacitor не разкрива това поле директно, ще използваме малък custom Capacitor plugin метод в съществуващия native код (или ще четем PackageManager.checkPermission).
-3. Връща `{ foreground: 'granted'|'denied', background: 'granted'|'denied'|'unknown' }`.
+### 4. Info.plist & Xcode (ръчни стъпки на Mac-а)
+Документираме в нов `resources/IOS_BACKGROUND_SETUP.md`:
+1. Отвори `ios/App/App.xcworkspace` в Xcode
+2. Signing & Capabilities → Team
+3. + Capability → **Push Notifications**
+4. + Capability → **Background Modes** → отметни:
+   - Location updates
+   - Background fetch
+   - Remote notifications
+5. Info.plist → добави `NSLocationAlwaysAndWhenInUseUsageDescription`, `NSLocationWhenInUseUsageDescription` (текстовете вече са в `IOS_READINESS.md`)
+6. APNs Auth Key:
+   - Apple Developer Portal → Keys → + → Apple Push Notifications service
+   - Свали `.p8` файл (само веднъж — пази го)
+   - Firebase Console → Project Settings → Cloud Messaging → Apple app configuration → Upload `.p8` + Key ID + Team ID
+7. `pod install` в `ios/App` (Xcode го прави автоматично при cap sync)
 
-Интеграция в `SharingToggle.tsx`:
-- След `proceedToggle(true)` извикваме `ensureBackgroundLocation()`.
-- Ако `background !== 'granted'` → показваме нов диалог **`BackgroundUpgradeDialog`** (Step 3).
+### 5. UI — споделено с Android
+`BackgroundUpgradeDialog.tsx` и `BackgroundPermissionBanner.tsx` ще се използват и за iOS, само със сменени текстове („Винаги" вместо „Позволи винаги") и iOS път до Settings (`UIApplication.openSettingsURLString` чрез native bridge).
 
-### Step 3 — Втори диалог: „Активирайте 'Винаги' за пълно споделяне"
-
-Нов файл: `src/components/BackgroundUpgradeDialog.tsx`
-
-Съдържание (BG):
-- Заглавие: „Още една стъпка за пълно споделяне"
-- Обяснение: „В момента членовете на кръга виждат локацията ви само когато приложението е отворено. За да я виждат и при заключен екран, изберете **'Allow all the time' / 'Позволи винаги'** в настройките."
-- Визуален guide (3 малки стъпки с икони): Settings → Permissions → Location → Allow all the time
-- Бутон **„Отвори настройки"** → използва `@capacitor/app` `App.openSettings()` или нативен intent `ACTION_APPLICATION_DETAILS_SETTINGS`
-- Бутон „По-късно"
-
-Запомняме в storage `bg_upgrade_prompt_shown_at` за да не спамим — пита се пак след 7 дни ако още не е дадено.
-
-### Step 4 — Early abort в native service когато bgLocation липсва
-
-Файл: `android-native/LocationRefreshForegroundService.java`
-
-Когато service-ът стартира и засече `bgLocation=false`:
-- Логва ясно: `NATIVE ABORT: background location permission missing`
-- Спира service-а веднага (без да чака 30s GPS timeout)
-- Записва в SharedPreferences flag `bg_perm_missing=true` с timestamp
-- При следващото отваряне на app-а, hook чете този flag и автоматично показва `BackgroundUpgradeDialog` с текст „Засякохме, че кръгът ви е поискал локацията ви, но нямахме нужното разрешение."
-
-### Step 5 — Постоянен banner в Index.tsx ако background липсва
-
-Малък warning banner над картата (само на Android, само ако sharing=true и background!=granted):
-
-> ⚠️ Локацията се споделя само докато приложението е отворено. [Активирай за заключен екран →]
-
-Кликът отваря `BackgroundUpgradeDialog`.
-
----
-
-## Технически детайли (за разработчика)
-
-**Двустъпков permission request на Android 11+**
+## Технически детайли
 
 ```text
-User toggles "Споделяне" ON
-        │
-        ▼
-┌─────────────────────────────┐
-│ BackgroundLocationRationale │  (нашият UI prompt — обяснява и предупреждава)
-└─────────────────────────────┘
-        │ Accept
-        ▼
-Geolocation.requestPermissions({ permissions: ['location'] })
-        │
-        ▼
-[OS prompt: While using / Once / Deny]
-        │ While using
-        ▼
-ensureBackgroundLocation() → background === 'denied'
-        │
-        ▼
-┌──────────────────────────┐
-│ BackgroundUpgradeDialog  │  (втори UI prompt — обяснява защо и как)
-└──────────────────────────┘
-        │ "Open settings"
-        ▼
-App.openSettings()  →  потребителят ръчно избира "Allow all the time"
+┌─────────────────────────────────────────────────────────┐
+│  iOS background location architecture                   │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  App alive (foreground or background):                  │
+│    @capacitor/geolocation watchPosition → upload        │
+│    + UIBackgroundModes: location → tiktak на lock       │
+│                                                         │
+│  App force-killed:                                      │
+│    SlcBridge (Swift) → SLC delegate fires → upload      │
+│    (1 update / ~500m, нула батерия)                     │
+│                                                         │
+│  Peer натиска „опресни":                                │
+│    send-push → APNs silent (content-available: 1) →     │
+│    iOS буди app за 30s → getCurrentPosition → upload    │
+│    (само ако app не е force-killed)                     │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**Защо НЕ можем да поискаме background директно:**
-Цитат от Android docs (API 30+): *„The system permission dialog doesn't include the 'Allow all the time' option. Instead, users must enable background location on a settings page."* Опит за `requestPermissions(['ACCESS_BACKGROUND_LOCATION'])` без foreground вече дадено → автоматичен deny без prompt.
+## Какво ТИ ще направиш на Mac-а (по стъпки)
 
-**Файлове, които ще се променят:**
-- `src/components/BackgroundLocationRationale.tsx` — добавя секция за двустъпковия flow
-- `src/components/BackgroundUpgradeDialog.tsx` — НОВ
-- `src/services/backgroundLocationPermission.ts` — НОВ
-- `src/components/SharingToggle.tsx` — извиква `ensureBackgroundLocation` след success
-- `src/pages/Index.tsx` — banner ако bg липсва
-- `android-native/LocationRefreshForegroundService.java` — early abort + flag в SharedPreferences
-- `scripts/patch-android-native-location.sh` — без промени, само sync
+```bash
+# 1. Клонирай / git pull
+git pull
 
-**iOS:** не е засегнато — на iOS „Always" опцията се появява в системния prompt по различен начин (Apple позволява втори системен prompt за upgrade) и текущият Capacitor Geolocation я обработва коректно.
+# 2. Инсталирай dependencies
+npm install
+
+# 3. Добави iOS платформа (само първия път)
+npx cap add ios
+
+# 4. Build + sync
+npm run build
+npx cap sync ios
+
+# 5. Подготви native iOS файлове (ако е сложен скрипт):
+npm run ios:prepare      # ще го създадем
+
+# 6. Отвори в Xcode
+npx cap open ios
+
+# 7. В Xcode: Signing, Capabilities, Info.plist (по checklist)
+
+# 8. Run на симулатор (⌘R) или физически iPhone (избира се target горе)
+```
+
+При следващи промени от моя страна повтаряш само 1, 4, 5, 8.
+
+## Какво НЕ е включено (последваща задача, ако пожелаеш)
+- App Store Connect metadata, screenshots, privacy nutrition label
+- TestFlight beta distribution
+- App icons и launch screen за iOS
 
 ---
-
-## Резултат за потребителя
-
-1. Включва Споделяне → вижда обяснителен screen, който предупреждава за двустъпковия процес.
-2. OS prompt → избира „Докато използвам".
-3. Веднага получава втори, ясен наш диалог: „За пълно споделяне натиснете тук" → бутон отваря системните настройки на app-а на правилния екран.
-4. Ако пропусне — вижда постоянен warning banner на главния екран и при следваща location_refresh заявка получава push-style напомняне.
+**Одобри плана за да започна имплементацията** (стъпки 1, 2, 3 от секция „План за изпълнение" — всичко в repo-то; ръчните Xcode стъпки ще ги документирам).
