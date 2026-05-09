@@ -16,6 +16,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
 import { openAppSettings } from '@/services/backgroundLocationPermission';
+import { toast } from '@/hooks/use-toast';
 
 interface Props {
   open: boolean;
@@ -26,9 +27,17 @@ interface Props {
 
 export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure }: Props) {
   const handleOpenSettings = async () => {
-    await openAppSettings();
-    // не затваряме веднага — потребителят се връща в app-а след промяна
-    onClose();
+    try {
+      await openAppSettings();
+      onClose();
+    } catch (e) {
+      console.error('[bg-perm] openAppSettings failed', e);
+      toast({
+        title: 'Не можах да отворя настройките',
+        description: 'Отворете ръчно: Настройки → Apps → Семейна локация → Permissions → Location → Allow all the time.',
+        variant: 'destructive',
+      });
+    }
   };
 
   return (

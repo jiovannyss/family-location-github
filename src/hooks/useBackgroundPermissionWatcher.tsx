@@ -1,13 +1,15 @@
 /**
  * Следи състоянието на background-location permission на Android.
  *
- * - При mount и всеки път когато app-ът става active, проверява
- *   foreground/background permission.
- * - Ако нативният service е failвал заради липсваща background permission
- *   (записан flag `fam_bg_perm_missing_at`), показва upgrade диалога
- *   автоматично и чисти flag-а.
+ * Refresh се прави при:
+ *   - mount
+ *   - app става активен (Capacitor appStateChange)
+ *   - document.visibilitychange (по-надежден от appStateChange при връщане
+ *     от системните настройки на някои устройства)
+ *   - window focus
+ *   - експозиран `refresh()` callback (за UI след затваряне на диалог)
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { App as CapacitorApp } from '@capacitor/app';
 import { isNative, nativePlatform } from '@/services/platform';
 import {
@@ -19,22 +21,22 @@ import {
 export function useBackgroundPermissionWatcher(enabled: boolean) {
   const [status, setStatus] = useState<BgPermissionStatus | null>(null);
   const [autoPromptForFailure, setAutoPromptForFailure] = useState(false);
+  const disposedRef = useRef(false);
+
+  const refresh = useCallback(async () => {
+    const s = await checkBackgroundPermission();
+    if (disposedRef.current) return;
+    setStatus(s);
+    if (s.background !== 'granted' && s.missingDetectedAt > 0) {
+      setAutoPromptForFailure(true);
+      await clearBackgroundMissingFlag();
+    }
+  }, []);
 
   useEffect(() => {
     if (!enabled || !isNative() || nativePlatform() !== 'android') return;
 
-    let disposed = false;
-
-    const refresh = async () => {
-      const s = await checkBackgroundPermission();
-      if (disposed) return;
-      setStatus(s);
-      if (s.background !== 'granted' && s.missingDetectedAt > 0) {
-        setAutoPromptForFailure(true);
-        await clearBackgroundMissingFlag();
-      }
-    };
-
+    disposedRef.current = false;
     void refresh();
 
     let listenerHandle: { remove: () => Promise<void> } | null = null;
@@ -42,11 +44,31 @@ export function useBackgroundPermissionWatcher(enabled: boolean) {
       if (isActive) void refresh();
     }).then((h) => { listenerHandle = h; });
 
-    return () => {
-      disposed = true;
-      if (listenerHandle) void listenerHandle.remove();
-    };
-  }, [enabled]);
+    const onVisibility = () => { if (document.visibilityState === 'visible') void refresh(); };
+    const onFocus = () => { void refresh(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
 
-  return { status, autoPromptForFailure, dismissAutoPrompt: () => setAutoPromptForFailure(false) };
+    // Polling backup докато permission още не е granted (отваря се settings,
+    // потребителят сменя, връща се — гарантирано хващаме и без events).
+    const interval = window.setInterval(() => {
+      if (disposedRef.current) return;
+      void refresh();
+    }, 3000);
+
+    return () => {
+      disposedRef.current = true;
+      if (listenerHandle) void listenerHandle.remove();
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(interval);
+    };
+  }, [enabled, refresh]);
+
+  return {
+    status,
+    autoPromptForFailure,
+    dismissAutoPrompt: () => setAutoPromptForFailure(false),
+    refresh,
+  };
 }

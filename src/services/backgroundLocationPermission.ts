@@ -99,8 +99,10 @@ export async function requestBackgroundPermission(): Promise<PermState> {
 }
 
 export async function openAppSettings(): Promise<void> {
-  if (!isAndroidNative()) return;
-  try { await Bridge.openAppSettings(); } catch { /* ignore */ }
+  if (!isAndroidNative()) throw new Error('Not Android native');
+  // Не catch-ваме — нека caller покаже toast при провал (например ако native
+  // bridge не е регистриран в MainActivity).
+  await Bridge.openAppSettings();
 }
 
 export async function clearBackgroundMissingFlag(): Promise<void> {
