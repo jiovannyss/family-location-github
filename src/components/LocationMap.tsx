@@ -180,7 +180,7 @@ function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number) 
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-const CLUSTER_RADIUS_M = 30;
+const CLUSTER_RADIUS_M = 75;
 
 function buildClusters(entries: (ClusterEntry & { lat: number; lng: number; accuracy_m: number | null })[]): Cluster[] {
   const clusters: Cluster[] = [];

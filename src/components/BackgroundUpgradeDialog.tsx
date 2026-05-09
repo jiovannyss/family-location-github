@@ -10,12 +10,18 @@
  * (ACTION_APPLICATION_DETAILS_SETTINGS) през BgLocationBridge plugin.
  */
 import { motion } from 'framer-motion';
-import { Settings, Lock, ArrowRight, Info } from 'lucide-react';
+import { Settings, Lock, ArrowRight, Info, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
-import { openAppSettings, platformLabels } from '@/services/backgroundLocationPermission';
+import {
+  openAppSettings,
+  platformLabels,
+  requestBackgroundPermission,
+  checkBackgroundPermission,
+} from '@/services/backgroundLocationPermission';
+import { isNative, nativePlatform } from '@/services/platform';
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
@@ -27,6 +33,38 @@ interface Props {
 
 export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure }: Props) {
   const labels = platformLabels();
+  const isIos = isNative() && nativePlatform() === 'ios';
+
+  const handleRequestAlways = async () => {
+    try {
+      const result = await requestBackgroundPermission();
+      if (result === 'granted') {
+        toast({ title: 'Готово', description: 'Достъп „Винаги" е активиран.' });
+        onClose();
+        return;
+      }
+      // Изчакай малко системния prompt да се появи и пак провери
+      await new Promise((r) => setTimeout(r, 1500));
+      const fresh = await checkBackgroundPermission();
+      if (fresh.background === 'granted') {
+        toast({ title: 'Готово', description: 'Достъп „Винаги" е активиран.' });
+        onClose();
+        return;
+      }
+      // iOS може да е „заглушил" prompt-а ако е бил отхвърлен веднъж →
+      // пускаме Настройки като резерва.
+      toast({
+        title: 'Системният прозорец не се появи',
+        description: 'Отварям Настройки за ръчно активиране.',
+      });
+      await openAppSettings();
+      onClose();
+    } catch (e) {
+      console.error('[bg-perm] requestAlways failed', e);
+      try { await openAppSettings(); onClose(); } catch { /* ignore */ }
+    }
+  };
+
   const handleOpenSettings = async () => {
     try {
       await openAppSettings();
@@ -94,7 +132,19 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
         </motion.div>
 
         <div className="flex flex-col gap-2 pt-2">
-          <Button onClick={handleOpenSettings} size="lg" className="w-full gap-2">
+          {isIos && (
+            <Button onClick={handleRequestAlways} size="lg" className="w-full gap-2">
+              <Bell className="w-4 h-4" />
+              Активирай „Винаги"
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+          )}
+          <Button
+            onClick={handleOpenSettings}
+            size="lg"
+            variant={isIos ? 'outline' : 'default'}
+            className="w-full gap-2"
+          >
             <Settings className="w-4 h-4" />
             Отвори настройки
             <ArrowRight className="w-4 h-4" />

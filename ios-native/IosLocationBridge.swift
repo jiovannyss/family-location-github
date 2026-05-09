@@ -37,6 +37,10 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
 
     private let manager = CLLocationManager()
     private var slcStarted = false
+    /// Когато requestAlways е извикан преди WhenInUse да е grant-нат,
+    /// маркираме flag-а и пускаме requestAlwaysAuthorization() от
+    /// delegate callback-а — иначе iOS игнорира заявката.
+    private var pendingAlwaysRequest = false
 
     public override func load() {
         manager.delegate = self
@@ -81,11 +85,15 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
             return
         }
         // iOS показва "Always" prompt само ако вече има WhenInUse.
-        // Ако няма — първо WhenInUse, после Always (системно).
         if status == .notDetermined {
-            manager.requestWhenInUseAuthorization()
+            // Маркирай — след callback-а от WhenInUse ще пуснем Always
+            pendingAlwaysRequest = true
+            DispatchQueue.main.async { self.manager.requestWhenInUseAuthorization() }
+            call.resolve(["background": "denied"])
+            return
         }
-        manager.requestAlwaysAuthorization()
+        // .authorizedWhenInUse → пускаме веднага системния "Always" prompt
+        DispatchQueue.main.async { self.manager.requestAlwaysAuthorization() }
         call.resolve(["background": currentStatus() == .authorizedAlways ? "granted" : "denied"])
     }
 
@@ -148,6 +156,13 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         NSLog("[\(IosLocationBridge.TAG)] auth changed → \(authStatusString())")
         notifyJsAuthChange()
+        // Ако имаме pending Always и току-що ни дадоха WhenInUse → пусни втория prompt
+        if pendingAlwaysRequest && currentStatus() == .authorizedWhenInUse {
+            pendingAlwaysRequest = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.manager.requestAlwaysAuthorization()
+            }
+        }
         // Ако вече имаме Always и не сме стартирали SLC — стартирай автоматично.
         if currentStatus() == .authorizedAlways && !slcStarted &&
            CLLocationManager.significantLocationChangeMonitoringAvailable() {
