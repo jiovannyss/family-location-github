@@ -1,112 +1,127 @@
-## Етап 2: Native Android FirebaseMessagingService за locked-screen / killed-app location refresh
+## Контекст и важно ограничение от Android
 
-### Цел
-Когато телефон Б получи `location_refresh` data-only push при заключен или killed app, native Android код (без JS runtime) да:
-1. вземе свежа GPS локация през FusedLocationProvider
-2. я качи към `location-refresh-upload` edge function
-3. покаже кратка foreground service нотификация (изискване на Android 14+)
+На **Android 11+ (API 30+)** Google НЕ позволява системният prompt да показва опция „Allow all the time" заедно с другите опции. Това е твърдо правило на платформата — не може да се заобиколи нито с код, нито с конфигурация, нито с друг permission API. Системата винаги показва само:
 
-JS foreground flow остава недокоснат — продължава да обработва push при отворен app.
+- Докато използвам приложението
+- Само този път
+- Откажи
 
----
+За да получим „Allowed all the time", Android задължава **двустъпков (incremental) flow**:
 
-### Принципи на безопасност (как пазим работещия напредък)
+1. Първо се иска `ACCESS_FINE_LOCATION` (foreground) → потребителят избира една от трите опции горе.
+2. Едва след като foreground е дадено, приложението може да поиска `ACCESS_BACKGROUND_LOCATION` отделно. На Android 11+ това **НЕ показва диалог** — операционната система отваря директно екрана с настройки на приложението, където има 4-та опция „Allow all the time", и потребителят трябва ръчно да я избере.
 
-1. **`android/` папката НЕ е в репото** — генерира се от `npx cap add android` + `cap sync`. Ако нещо счупи, `rm -rf android/` връща чисто състояние.
-2. **Всички native промени** минават през **идемпотентни patch скриптове**, които се изпълняват СЛЕД `cap sync`.
-3. **Native Kotlin изходният код** живее в `android-native/` в репото и се копира в `android/app/src/main/java/...` от patch скрипта.
-4. **Не пипаме** token registration, FCM token flow, permission flow, foreground tracking, JS push listener-и, edge functions (`request-location-refresh`, `location-refresh-upload`, `send-push`).
-5. **Custom service extends Capacitor's `MessagingService`** — non-`location_refresh` съобщения се delegate-ват чрез `super.onMessageReceived(message)`, така че текущата JS push доставка остава непокътната.
+Затова не можем „да я има тази опция в първия prompt и да е маркирана по дифолт" — това е забранено от Google. Това, което **можем** и **трябва** да направим, е да водим потребителя през този двустъпков процес с ясни обяснения на български на всяка стъпка.
 
 ---
 
-### Промени
+## План: ясен onboarding за background location
 
-#### A. Нови native Kotlin файлове (в репото, не в `android/`)
+### Step 1 — Подобрен rationale (преди първия системен prompt)
 
-**`android-native/FamilyLocationMessagingService.kt`**
-- Extends `com.capacitorjs.plugins.pushnotifications.MessagingService` (Capacitor's FCM service)
-- В `onMessageReceived(message)`:
-  - Ако `data["type"] == "location_refresh"` → стартира `LocationRefreshForegroundService`, лог `NATIVE location_refresh push received`, `return`
-  - Иначе → `super.onMessageReceived(message)` (доставя към JS както винаги)
-- В `onNewToken(token)` → `super.onNewToken(token)` (запазва Capacitor flow)
+Файл: `src/components/BackgroundLocationRationale.tsx`
 
-**`android-native/LocationRefreshForegroundService.kt`** (Foreground Service)
-- В `onCreate()` → `startForeground(notifId, notification, FOREGROUND_SERVICE_TYPE_LOCATION)` с дискретна notification ("Обновяване на локацията...")
-- В `onStartCommand()`:
-  - Чете `user_id` и `device_id` от `SharedPreferences` (Capacitor `Preferences` plugin пише в `CapacitorStorage` SharedPreferences)
-  - Permission guard: ако няма `ACCESS_FINE_LOCATION` → log `NATIVE ABORT missing permission`, `stopSelf()`
-  - `FusedLocationProviderClient.getCurrentLocation(PRIORITY_HIGH_ACCURACY, cancellationToken)` — single shot
-  - 30s watchdog timer; ако не пристигне fix → `stopSelf()`
-  - При success → OkHttp `POST` към `${SUPABASE_URL}/functions/v1/location-refresh-upload` с `apikey` + `Authorization: Bearer <anon>` headers
-  - 15s connect/read timeout
-  - Логове: `NATIVE GPS request started`, `NATIVE GPS success/failure`, `NATIVE upload started`, `NATIVE upload success/failure`, `NATIVE service stopped`
-  - `stopSelf()` в `finally`
-- Tag за всички логове: `FamLocNative` (filter с `adb logcat -s FamLocNative:V`)
+Добавяме секция, която предупреждава предварително, че:
+- Системният прозорец ще покаже **3 опции** (без „Винаги")
+- Това е нормално за Android 11+
+- След като дадете „Докато използвам приложението", ще ви водим към втора стъпка за „Винаги"
+- Без „Винаги" другите членове **няма да виждат локацията ви, когато екранът е заключен или приложението е затворено**
 
-#### B. Patch скрипт `scripts/patch-android-native-location.sh`
-Идемпотентен. Прави:
-1. `cp android-native/*.kt android/app/src/main/java/<package>/`
-2. Добавя в `android/app/build.gradle` dependencies (ако липсват):
-   - `implementation 'com.google.android.gms:play-services-location:21.3.0'`
-   - `implementation 'com.squareup.okhttp3:okhttp:4.12.0'`
-3. Добавя в `AndroidManifest.xml` (ако липсват):
-   - `<service android:name=".FamilyLocationMessagingService" android:exported="false">` с `<intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT"/></intent-filter>` — **преди** Capacitor's default service entry, така че Android избира нашия
-   - `<service android:name=".LocationRefreshForegroundService" android:foregroundServiceType="location" android:exported="false"/>`
-4. Записва `SUPABASE_URL` и `SUPABASE_ANON_KEY` като `<meta-data>` в `AndroidManifest.xml`, четат се от Kotlin кода (избягваме hardcode)
+### Step 2 — Реална проверка за background permission след foreground prompt
 
-#### C. Интеграция
-- `scripts/android-prepare.sh`: добавя стъпка `▶ 3/3 Patching native location service` → извиква новия patch script
-- `.github/workflows/build-android.yml`: добавя стъпка след "Patch AndroidManifest" (само ако `enable_push == 'true'`):
-  ```
-  - name: Apply native location service patch
-    if: ${{ inputs.enable_push == 'true' }}
-    run: ./scripts/patch-android-native-location.sh
-  ```
+Нов файл: `src/services/backgroundLocationPermission.ts`
 
-#### D. Малка JS промяна в `src/services/push.ts`
-- В `setCachedPushUid` допълнително пише `user_id` и `device_id` в **plain `Preferences`** ключове (`fam_user_id`, `fam_device_id`) с известни имена, така че native Kotlin да ги прочете директно от SharedPreferences (`CapacitorStorage`). 
-- JS `handleLocationRefreshPush` остава недокоснат — продължава да работи при foreground.
+Функция `ensureBackgroundLocation()` която:
+1. Проверява текущото състояние през `Geolocation.checkPermissions()` (Capacitor връща `coarseLocation` и `location`).
+2. На native + Android, ако foreground е granted, проверява чрез нативен bridge дали `ACCESS_BACKGROUND_LOCATION` е дадено. Ако Capacitor не разкрива това поле директно, ще използваме малък custom Capacitor plugin метод в съществуващия native код (или ще четем PackageManager.checkPermission).
+3. Връща `{ foreground: 'granted'|'denied', background: 'granted'|'denied'|'unknown' }`.
 
-#### E. Документация
-- Нова секция в `README.md`: "Native Android locked-screen location refresh" с обяснение как се debug-ва (`adb logcat -s FamLocNative:V`)
+Интеграция в `SharingToggle.tsx`:
+- След `proceedToggle(true)` извикваме `ensureBackgroundLocation()`.
+- Ако `background !== 'granted'` → показваме нов диалог **`BackgroundUpgradeDialog`** (Step 3).
 
----
+### Step 3 — Втори диалог: „Активирайте 'Винаги' за пълно споделяне"
 
-### Какво НЕ се пипа
-- `src/services/push.ts` `handleLocationRefreshPush`, `attachDeliveryListenersOnce`, `NativePushService.registerForUser`, token upsert
-- `src/services/geolocation.ts`, `src/services/locationUpload.ts`, `src/services/backgroundGeo.ts`
-- Всички edge functions (`request-location-refresh`, `location-refresh-upload`, `send-push`, `test-push`)
-- Firebase setup, `patch-android-firebase.sh`, `MyApplication.java`
-- iOS workflow и iOS код
-- Permission flow (Android background-location onboarding е отделен patch)
+Нов файл: `src/components/BackgroundUpgradeDialog.tsx`
+
+Съдържание (BG):
+- Заглавие: „Още една стъпка за пълно споделяне"
+- Обяснение: „В момента членовете на кръга виждат локацията ви само когато приложението е отворено. За да я виждат и при заключен екран, изберете **'Allow all the time' / 'Позволи винаги'** в настройките."
+- Визуален guide (3 малки стъпки с икони): Settings → Permissions → Location → Allow all the time
+- Бутон **„Отвори настройки"** → използва `@capacitor/app` `App.openSettings()` или нативен intent `ACTION_APPLICATION_DETAILS_SETTINGS`
+- Бутон „По-късно"
+
+Запомняме в storage `bg_upgrade_prompt_shown_at` за да не спамим — пита се пак след 7 дни ако още не е дадено.
+
+### Step 4 — Early abort в native service когато bgLocation липсва
+
+Файл: `android-native/LocationRefreshForegroundService.java`
+
+Когато service-ът стартира и засече `bgLocation=false`:
+- Логва ясно: `NATIVE ABORT: background location permission missing`
+- Спира service-а веднага (без да чака 30s GPS timeout)
+- Записва в SharedPreferences flag `bg_perm_missing=true` с timestamp
+- При следващото отваряне на app-а, hook чете този flag и автоматично показва `BackgroundUpgradeDialog` с текст „Засякохме, че кръгът ви е поискал локацията ви, но нямахме нужното разрешение."
+
+### Step 5 — Постоянен banner в Index.tsx ако background липсва
+
+Малък warning banner над картата (само на Android, само ако sharing=true и background!=granted):
+
+> ⚠️ Локацията се споделя само докато приложението е отворено. [Активирай за заключен екран →]
+
+Кликът отваря `BackgroundUpgradeDialog`.
 
 ---
 
-### Технически детайли
+## Технически детайли (за разработчика)
 
-**Защо extend Capacitor's MessagingService, а не replace?**
-Capacitor's `@capacitor/push-notifications` plugin регистрира свой `MessagingService` за да доставя push-и към JS. Ако го заменим напълно, foreground push доставка към JS ще се счупи. Затова extend-ваме и delegate-ваме чрез `super.onMessageReceived()` за всичко, което не е `location_refresh`.
+**Двустъпков permission request на Android 11+**
 
-**Защо четем user_id/device_id от SharedPreferences, не от Supabase auth?**
-В native Kotlin няма Supabase SDK. Auth токенът е в Capacitor `Preferences`, но е JWT — би трябвало да го refresh-ваме. Затова използваме съществуващия `location-refresh-upload` endpoint, който приема `(userId, deviceId)` и валидира срещу `push_tokens` (вече registered device). Това е същият auth модел като JS пътя.
+```text
+User toggles "Споделяне" ON
+        │
+        ▼
+┌─────────────────────────────┐
+│ BackgroundLocationRationale │  (нашият UI prompt — обяснява и предупреждава)
+└─────────────────────────────┘
+        │ Accept
+        ▼
+Geolocation.requestPermissions({ permissions: ['location'] })
+        │
+        ▼
+[OS prompt: While using / Once / Deny]
+        │ While using
+        ▼
+ensureBackgroundLocation() → background === 'denied'
+        │
+        ▼
+┌──────────────────────────┐
+│ BackgroundUpgradeDialog  │  (втори UI prompt — обяснява защо и как)
+└──────────────────────────┘
+        │ "Open settings"
+        ▼
+App.openSettings()  →  потребителят ръчно избира "Allow all the time"
+```
 
-**Защо `FOREGROUND_SERVICE_TYPE_LOCATION`?**
-Android 14+ изисква типизиран foreground service за достъп до location в background. Permission `FOREGROUND_SERVICE_LOCATION` вече е в manifest-а.
+**Защо НЕ можем да поискаме background директно:**
+Цитат от Android docs (API 30+): *„The system permission dialog doesn't include the 'Allow all the time' option. Instead, users must enable background location on a settings page."* Опит за `requestPermissions(['ACCESS_BACKGROUND_LOCATION'])` без foreground вече дадено → автоматичен deny без prompt.
 
-**Notification UX**
-Кратка нотификация "Обновяване на локацията..." с low importance (`IMPORTANCE_LOW` channel) — не звъни, не вибрира, изчезва щом service-ът stop-не. Изисквание на Android, не може да се избегне за foreground service.
+**Файлове, които ще се променят:**
+- `src/components/BackgroundLocationRationale.tsx` — добавя секция за двустъпковия flow
+- `src/components/BackgroundUpgradeDialog.tsx` — НОВ
+- `src/services/backgroundLocationPermission.ts` — НОВ
+- `src/components/SharingToggle.tsx` — извиква `ensureBackgroundLocation` след success
+- `src/pages/Index.tsx` — banner ако bg липсва
+- `android-native/LocationRefreshForegroundService.java` — early abort + flag в SharedPreferences
+- `scripts/patch-android-native-location.sh` — без промени, само sync
+
+**iOS:** не е засегнато — на iOS „Always" опцията се появява в системния prompt по различен начин (Apple позволява втори системен prompt за upgrade) и текущият Capacitor Geolocation я обработва коректно.
 
 ---
 
-### План за rollback (ако нещо счупи)
-1. Премахни стъпката от `build-android.yml` и `android-prepare.sh`
-2. `rm -rf android/` локално → `npx cap sync android` → `./scripts/android-prepare.sh`
-3. Резултат: текущият работещ JS foreground flow (без native) се връща напълно
+## Резултат за потребителя
 
-### Ред на изпълнение
-1. Създаване на `android-native/FamilyLocationMessagingService.kt` и `LocationRefreshForegroundService.kt`
-2. Създаване на `scripts/patch-android-native-location.sh`
-3. Интеграция в `scripts/android-prepare.sh` и `.github/workflows/build-android.yml`
-4. Малък JS patch в `push.ts` за `fam_user_id`/`fam_device_id` SharedPreferences ключове
-5. Документация в `README.md`
+1. Включва Споделяне → вижда обяснителен screen, който предупреждава за двустъпковия процес.
+2. OS prompt → избира „Докато използвам".
+3. Веднага получава втори, ясен наш диалог: „За пълно споделяне натиснете тук" → бутон отваря системните настройки на app-а на правилния екран.
+4. Ако пропусне — вижда постоянен warning banner на главния екран и при следваща location_refresh заявка получава push-style напомняне.
