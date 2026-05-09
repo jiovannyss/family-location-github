@@ -13,6 +13,8 @@ import BackgroundUpgradeDialog from './BackgroundUpgradeDialog';
 import {
   ensureForegroundLocation,
   checkBackgroundPermission,
+  startNativeBackgroundMonitoring,
+  stopNativeBackgroundMonitoring,
 } from '@/services/backgroundLocationPermission';
 
 const BG_RATIONALE_KEY = 'bg_location_rationale_shown_v1';
