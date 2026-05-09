@@ -68,7 +68,14 @@ function buildDirectRecoveryUrl(originalUrl: string) {
     return resetUrl.toString()
   }
 
-  const code = original.searchParams.get('code') ?? original.searchParams.get('token')
+  const hashedToken = original.searchParams.get('token')
+  if (hashedToken) {
+    resetUrl.searchParams.set('token_hash', hashedToken)
+    resetUrl.searchParams.set('type', 'recovery')
+    return resetUrl.toString()
+  }
+
+  const code = original.searchParams.get('code')
   if (code) {
     resetUrl.searchParams.set('code', code)
     resetUrl.searchParams.set('type', 'recovery')
