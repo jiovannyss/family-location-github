@@ -203,6 +203,43 @@ jobs:
       - name: Sync Capacitor
         run: bunx cap sync ios
 
+      - name: Run iOS prepare (copy native bridge + patch AppDelegate/Info.plist)
+        run: bun run ios:prepare
+
+      - name: Add IosLocationBridge.swift to Xcode project (Compile Sources)
+        working-directory: ios/App
+        run: |
+          set -e
+          if ! gem list -i xcodeproj >/dev/null 2>&1; then
+            sudo gem install xcodeproj --no-document
+          fi
+          ruby <<'RUBY'
+          require 'xcodeproj'
+          project_path = 'App.xcodeproj'
+          project = Xcodeproj::Project.open(project_path)
+          target = project.targets.find { |t| t.name == 'App' }
+          raise 'App target not found' unless target
+
+          bridge_rel = 'App/IosLocationBridge.swift'
+          bridge_abs = File.expand_path(bridge_rel)
+          unless File.exist?(bridge_abs)
+            raise "Bridge file missing at #{bridge_abs} — ios:prepare did not copy it."
+          end
+
+          # Already present?
+          existing = target.source_build_phase.files_references.find { |r| r && r.path && r.path.end_with?('IosLocationBridge.swift') }
+          if existing
+            puts "ℹ️ IosLocationBridge.swift already in Compile Sources."
+          else
+            app_group = project.main_group.find_subpath('App', true)
+            file_ref = app_group.files.find { |f| f.path == 'IosLocationBridge.swift' }
+            file_ref ||= app_group.new_reference('IosLocationBridge.swift')
+            target.add_file_references([file_ref])
+            puts "✅ IosLocationBridge.swift added to App target."
+          end
+          project.save
+          RUBY
+
       - name: Generate iOS icons & splash from resources/
         run: |
           bunx @capacitor/assets generate \
