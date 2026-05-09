@@ -19,6 +19,7 @@ import CircleMembers from '@/components/CircleMembers';
 import SharingToggle from '@/components/SharingToggle';
 import LocationMap from '@/components/LocationMap';
 import NotificationPermissionPrompt from '@/components/NotificationPermissionPrompt';
+import BackgroundPermissionBanner from '@/components/BackgroundPermissionBanner';
 import { Button } from '@/components/ui/button';
 
 const Index = () => {
