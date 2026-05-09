@@ -90,7 +90,7 @@ export function useLocationTracking() {
   };
   const clearError = () => {
     errorCountRef.current = 0;
-    clearError();
+    setError(null);
   };
   const [permissionState, setPermissionState] = useState<
     'granted' | 'denied' | 'prompt' | 'unknown' | null
