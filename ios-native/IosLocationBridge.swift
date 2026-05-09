@@ -37,6 +37,10 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
 
     private let manager = CLLocationManager()
     private var slcStarted = false
+    /// Когато requestAlways е извикан преди WhenInUse да е grant-нат,
+    /// маркираме flag-а и пускаме requestAlwaysAuthorization() от
+    /// delegate callback-а — иначе iOS игнорира заявката.
+    private var pendingAlwaysRequest = false
 
     public override func load() {
         manager.delegate = self
