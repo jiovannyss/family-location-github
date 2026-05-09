@@ -8,7 +8,7 @@
  * Текстовете са BG + EN едновременно за store ревюъри.
  */
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, Shield, Users, Power } from 'lucide-react';
+import { MapPin, Shield, Users, Power, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
