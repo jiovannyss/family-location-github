@@ -7,10 +7,17 @@ import { useSharingState, useLocationTracking } from '@/hooks/useLocation';
 import { useNotificationPermission } from '@/hooks/useNotificationPermission';
 import { toast } from 'sonner';
 import { storage } from '@/services/storage';
-import { isNative } from '@/services/platform';
+import { isNative, nativePlatform } from '@/services/platform';
 import BackgroundLocationRationale from './BackgroundLocationRationale';
+import BackgroundUpgradeDialog from './BackgroundUpgradeDialog';
+import {
+  ensureForegroundLocation,
+  checkBackgroundPermission,
+} from '@/services/backgroundLocationPermission';
 
 const BG_RATIONALE_KEY = 'bg_location_rationale_shown_v1';
+const BG_UPGRADE_LAST_PROMPT_KEY = 'bg_upgrade_prompt_shown_at';
+const BG_UPGRADE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000; // 7 дни
 
 export default function SharingToggle() {
   const { isSharing, toggleSharing, isToggling } = useSharingState();
