@@ -295,8 +295,8 @@ function patchNativeLocation() {
   }
 
   // 3.3b Регистрирай BgLocationBridge Capacitor plugin в MainActivity
-  let maSrc = read(mainActivity);
-  if (!maSrc.includes('BgLocationBridge.class')) {
+  let maSrc2 = read(mainActivity);
+  if (!maSrc2.includes('BgLocationBridge.class')) {
     // Гарантирай import за os.Bundle (за onCreate signature)
     if (!/import\s+android\.os\.Bundle;/.test(maSrc)) {
       maSrc = maSrc.replace(
