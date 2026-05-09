@@ -111,6 +111,7 @@ const Index = () => {
       className="space-y-4 sm:space-y-6"
     >
       <NotificationPermissionPrompt />
+      <BackgroundPermissionBanner />
       <SharingToggle />
 
       <div className="bg-card rounded-xl border border-border p-3 sm:p-4 shadow-sm">
