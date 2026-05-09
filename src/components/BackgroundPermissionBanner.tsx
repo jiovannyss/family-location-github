@@ -49,7 +49,7 @@ export default function BackgroundPermissionBanner() {
               Локацията се споделя само при отворено приложение
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Натиснете, за да активирате „Позволи винаги" за заключен екран.
+              Натиснете, за да активирате „{labels.alwaysOption}" за заключен екран.
             </p>
           </div>
           <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
