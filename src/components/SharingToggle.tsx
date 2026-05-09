@@ -169,6 +169,10 @@ export default function SharingToggle() {
       onAccept={handleRationaleAccept}
       onDecline={handleRationaleDecline}
     />
+    <BackgroundUpgradeDialog
+      open={upgradeOpen}
+      onClose={() => setUpgradeOpen(false)}
+    />
     </>
   );
 }
