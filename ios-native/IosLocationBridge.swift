@@ -26,10 +26,13 @@ import UIKit
 public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
 
     private static let TAG = "FamLocIOS"
-    private static let DEFAULTS_USER = "fam_user_id"
-    private static let DEFAULTS_DEVICE = "fam_device_id"
-    private static let DEFAULTS_SUPABASE_URL = "fam_supabase_url"
-    private static let DEFAULTS_DEVICE_PLATFORM = "fam_device_platform"
+    // @capacitor/preferences плъгинът на iOS префиксира всички ключове с
+    // "_capacitor_" в UserDefaults.standard. Затова четем с този префикс.
+    private static let PREFS_PREFIX = "_capacitor_"
+    private static let DEFAULTS_USER = "_capacitor_fam_user_id"
+    private static let DEFAULTS_DEVICE = "_capacitor_fam_device_id"
+    private static let DEFAULTS_SUPABASE_URL = "_capacitor_fam_supabase_url"
+    private static let DEFAULTS_DEVICE_PLATFORM = "_capacitor_fam_device_platform"
     private static let DEFAULTS_MISSING_AT = "fam_bg_perm_missing_at"
 
     private let manager = CLLocationManager()
