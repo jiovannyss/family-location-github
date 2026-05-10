@@ -21,7 +21,7 @@ import {
   requestBackgroundPermission,
   checkBackgroundPermission,
 } from '@/services/backgroundLocationPermission';
-import { isNative, nativePlatform } from '@/services/platform';
+
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
@@ -33,7 +33,6 @@ interface Props {
 
 export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure }: Props) {
   const labels = platformLabels();
-  const isIos = isNative() && nativePlatform() === 'ios';
 
   const handleRequestAlways = async () => {
     try {
@@ -103,7 +102,7 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
             <div className="flex gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
               <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
               <p>
-                Член от вашия кръг поиска вашата локация, но телефонът не позволи да я изпратим
+                Член от вашия кръг поиска вашата локация, но устройството не позволи да я изпратим
                 — приложението няма разрешение да достъпва GPS при заключен екран.
               </p>
             </div>
@@ -132,17 +131,15 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
         </motion.div>
 
         <div className="flex flex-col gap-2 pt-2">
-          {isIos && (
-            <Button onClick={handleRequestAlways} size="lg" className="w-full gap-2">
-              <Bell className="w-4 h-4" />
-              Активирай „Винаги"
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          )}
+          <Button onClick={handleRequestAlways} size="lg" className="w-full gap-2">
+            <Bell className="w-4 h-4" />
+            Активирай „{labels.alwaysOption}"
+            <ArrowRight className="w-4 h-4" />
+          </Button>
           <Button
             onClick={handleOpenSettings}
             size="lg"
-            variant={isIos ? 'outline' : 'default'}
+            variant="outline"
             className="w-full gap-2"
           >
             <Settings className="w-4 h-4" />
