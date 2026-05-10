@@ -33,7 +33,6 @@ interface Props {
 
 export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure }: Props) {
   const labels = platformLabels();
-  const isIos = isNative() && nativePlatform() === 'ios';
 
   const handleRequestAlways = async () => {
     try {
