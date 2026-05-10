@@ -132,17 +132,15 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
         </motion.div>
 
         <div className="flex flex-col gap-2 pt-2">
-          {isIos && (
-            <Button onClick={handleRequestAlways} size="lg" className="w-full gap-2">
-              <Bell className="w-4 h-4" />
-              Активирай „Винаги"
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          )}
+          <Button onClick={handleRequestAlways} size="lg" className="w-full gap-2">
+            <Bell className="w-4 h-4" />
+            Активирай „{labels.alwaysOption}"
+            <ArrowRight className="w-4 h-4" />
+          </Button>
           <Button
             onClick={handleOpenSettings}
             size="lg"
-            variant={isIos ? 'outline' : 'default'}
+            variant="outline"
             className="w-full gap-2"
           >
             <Settings className="w-4 h-4" />
