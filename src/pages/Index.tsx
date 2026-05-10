@@ -212,7 +212,7 @@ const Index = () => {
       </div>
 
       <main
-        className="container px-3 sm:px-4 py-4 sm:py-6 max-w-7xl pt-[calc(3.5rem+env(safe-area-inset-top)+3.75rem)] sm:pt-[calc(4rem+env(safe-area-inset-top)+1.5rem)]"
+        className="container px-3 sm:px-4 py-4 sm:py-6 max-w-7xl pt-[calc(3.5rem+env(safe-area-inset-top)+4.25rem)] sm:pt-[calc(4rem+env(safe-area-inset-top)+1.5rem)]"
       >
         {/* Desktop: two columns — map fixed to viewport, sidebar scrolls */}
         <div className="hidden lg:grid lg:grid-cols-[380px,1fr] gap-6 lg:h-[calc(100vh-4rem-env(safe-area-inset-top)-3rem)]">
