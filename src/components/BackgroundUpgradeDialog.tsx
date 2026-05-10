@@ -21,7 +21,7 @@ import {
   requestBackgroundPermission,
   checkBackgroundPermission,
 } from '@/services/backgroundLocationPermission';
-import { isNative, nativePlatform } from '@/services/platform';
+
 import { toast } from '@/hooks/use-toast';
 
 interface Props {
