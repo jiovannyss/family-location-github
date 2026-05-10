@@ -103,7 +103,7 @@ export default function BackgroundUpgradeDialog({ open, onClose, detectedFailure
             <div className="flex gap-2 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
               <Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
               <p>
-                Член от вашия кръг поиска вашата локация, но телефонът не позволи да я изпратим
+                Член от вашия кръг поиска вашата локация, но устройството не позволи да я изпратим
                 — приложението няма разрешение да достъпва GPS при заключен екран.
               </p>
             </div>
