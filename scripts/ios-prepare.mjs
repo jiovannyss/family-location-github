@@ -180,7 +180,7 @@ function patchAppDelegate() {
 // =========================================================================
 function patchEntitlements() {
   // Capacitor генерира base App.entitlements. За да работи Push Notifications
-  // (без ръчен Xcode click) автоматично добавяме `aps-environment=development`.
+  // (без ръчен Xcode click) автоматично добавяме `aps-environment=production`.
   // Production билд от App Store Connect използва production APNs автоматично.
   if (!exists(ENTITLEMENTS)) {
     info('   ⚠ App.entitlements липсва — създавам минимален с aps-environment');
@@ -188,18 +188,18 @@ function patchEntitlements() {
 `<?xml version="1.0" encoding="UTF-8"?>\n` +
 `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
 `<plist version="1.0">\n<dict>\n` +
-`\t<key>aps-environment</key>\n\t<string>development</string>\n` +
+`\t<key>aps-environment</key>\n\t<string>production</string>\n` +
 `</dict>\n</plist>\n`;
     write(ENTITLEMENTS, stub);
-    info('   + App.entitlements created with aps-environment=development');
+    info('   + App.entitlements created with aps-environment=production');
     return;
   }
   let src = read(ENTITLEMENTS);
   if (!src.includes('aps-environment')) {
     src = src.replace(/<\/dict>\s*<\/plist>\s*$/,
-      `\t<key>aps-environment</key>\n\t<string>development</string>\n</dict>\n</plist>\n`);
+      `\t<key>aps-environment</key>\n\t<string>production</string>\n</dict>\n</plist>\n`);
     write(ENTITLEMENTS, src);
-    info('   + aps-environment=development добавен в App.entitlements');
+    info('   + aps-environment=production добавен в App.entitlements');
   } else {
     info('   ✓ aps-environment present');
   }
