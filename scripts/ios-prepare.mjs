@@ -141,25 +141,65 @@ function patchAppDelegate() {
 
   src = src.replace(/return true/, `${MARK}\n        return true`);
 
+  // ---------------------------------------------------------------------
+  // КРИТИЧНО: Capacitor PushNotifications плъгинът зависи от това
+  // AppDelegate-ът да препрати APNs callback-ите чрез NotificationCenter.
+  // Стандартният Capacitor template ги има, но при ръчно редактирани
+  // AppDelegate-и (или при upgrade) могат да липсват → `registration`
+  // event никога не се firе-ва и Push.register() timeout-ва.
+  // Идемпотентно вмъкваме методите ако не присъстват.
+  // ---------------------------------------------------------------------
+  const APNS_MARK = '// FAM_LOC_APNS_FORWARDERS';
+  if (!src.includes(APNS_MARK) &&
+      !src.includes('didRegisterForRemoteNotificationsWithDeviceToken')) {
+    const block =
+`\n    ${APNS_MARK}\n` +
+`    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {\n` +
+`        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)\n` +
+`    }\n\n` +
+`    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {\n` +
+`        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)\n` +
+`    }\n`;
+    // Вмъкваме преди затварящата скоба на класа AppDelegate.
+    // Намираме последната `}` в файла и слагаме block преди нея.
+    const lastBrace = src.lastIndexOf('}');
+    if (lastBrace > 0) {
+      src = src.slice(0, lastBrace) + block + '\n' + src.slice(lastBrace);
+      info('   + APNs forwarder methods (didRegisterForRemoteNotifications…)');
+    }
+  } else {
+    info('   ✓ APNs forwarder methods already present');
+  }
+
   write(APP_DELEGATE, src);
-  info('   ✓ AppDelegate marked without injecting deprecated Capacitor observer');
+  info('   ✓ AppDelegate patched');
 }
 
 // =========================================================================
 // 4) Entitlements stub (Push + APS environment)
 // =========================================================================
 function patchEntitlements() {
-  // Capacitor генерира base App.entitlements, но Push Notifications
-  // capability добавя `aps-environment`. Не пипаме — Xcode го управлява
-  // когато Capability "Push Notifications" е добавен. Само логваме статус.
+  // Capacitor генерира base App.entitlements. За да работи Push Notifications
+  // (без ръчен Xcode click) автоматично добавяме `aps-environment=development`.
+  // Production билд от App Store Connect използва production APNs автоматично.
   if (!exists(ENTITLEMENTS)) {
-    info('   ℹ App.entitlements липсва — ще се създаде от Xcode когато добавиш Push Notifications capability.');
+    info('   ⚠ App.entitlements липсва — създавам минимален с aps-environment');
+    const stub =
+`<?xml version="1.0" encoding="UTF-8"?>\n` +
+`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
+`<plist version="1.0">\n<dict>\n` +
+`\t<key>aps-environment</key>\n\t<string>development</string>\n` +
+`</dict>\n</plist>\n`;
+    write(ENTITLEMENTS, stub);
+    info('   + App.entitlements created with aps-environment=development');
     return;
   }
-  const src = read(ENTITLEMENTS);
+  let src = read(ENTITLEMENTS);
   if (!src.includes('aps-environment')) {
-    info('   ⚠ aps-environment липсва в App.entitlements');
-    info('     → Отвори Xcode → таргет App → Signing & Capabilities → + Capability → Push Notifications');
+    src = src.replace(/<\/dict>\s*<\/plist>\s*$/,
+      `\t<key>aps-environment</key>\n\t<string>development</string>\n</dict>\n</plist>\n`);
+    write(ENTITLEMENTS, src);
+    info('   + aps-environment=development добавен в App.entitlements');
   } else {
     info('   ✓ aps-environment present');
   }
