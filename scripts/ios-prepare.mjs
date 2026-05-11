@@ -141,8 +141,38 @@ function patchAppDelegate() {
 
   src = src.replace(/return true/, `${MARK}\n        return true`);
 
+  // ---------------------------------------------------------------------
+  // КРИТИЧНО: Capacitor PushNotifications плъгинът зависи от това
+  // AppDelegate-ът да препрати APNs callback-ите чрез NotificationCenter.
+  // Стандартният Capacitor template ги има, но при ръчно редактирани
+  // AppDelegate-и (или при upgrade) могат да липсват → `registration`
+  // event никога не се firе-ва и Push.register() timeout-ва.
+  // Идемпотентно вмъкваме методите ако не присъстват.
+  // ---------------------------------------------------------------------
+  const APNS_MARK = '// FAM_LOC_APNS_FORWARDERS';
+  if (!src.includes(APNS_MARK) &&
+      !src.includes('didRegisterForRemoteNotificationsWithDeviceToken')) {
+    const block =
+`\n    ${APNS_MARK}\n` +
+`    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {\n` +
+`        NotificationCenter.default.post(name: .capacitorDidRegisterForRemoteNotifications, object: deviceToken)\n` +
+`    }\n\n` +
+`    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {\n` +
+`        NotificationCenter.default.post(name: .capacitorDidFailToRegisterForRemoteNotifications, object: error)\n` +
+`    }\n`;
+    // Вмъкваме преди затварящата скоба на класа AppDelegate.
+    // Намираме последната `}` в файла и слагаме block преди нея.
+    const lastBrace = src.lastIndexOf('}');
+    if (lastBrace > 0) {
+      src = src.slice(0, lastBrace) + block + '\n' + src.slice(lastBrace);
+      info('   + APNs forwarder methods (didRegisterForRemoteNotifications…)');
+    }
+  } else {
+    info('   ✓ APNs forwarder methods already present');
+  }
+
   write(APP_DELEGATE, src);
-  info('   ✓ AppDelegate marked without injecting deprecated Capacitor observer');
+  info('   ✓ AppDelegate patched');
 }
 
 // =========================================================================
