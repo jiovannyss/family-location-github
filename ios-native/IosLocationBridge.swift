@@ -36,11 +36,19 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
     private static let DEFAULTS_MISSING_AT = "fam_bg_perm_missing_at"
 
     private let manager = CLLocationManager()
+    /// Отделен manager за еднократен fix при silent push (за да не интерферира с SLC).
+    private let oneShotManager = CLLocationManager()
     private var slcStarted = false
     /// Когато requestAlways е извикан преди WhenInUse да е grant-нат,
     /// маркираме flag-а и пускаме requestAlwaysAuthorization() от
     /// delegate callback-а — иначе iOS игнорира заявката.
     private var pendingAlwaysRequest = false
+
+    /// Pending completion handlers за active silent-push refresh заявки.
+    /// iOS дава ~30s background time, след което UIBackgroundFetchResult трябва
+    /// да бъде извикан. Пазим до 3 paralleling заявки.
+    private var pendingPushCompletions: [(UIBackgroundFetchResult) -> Void] = []
+    private var pushRefreshInFlight = false
 
     public override func load() {
         manager.delegate = self
@@ -51,8 +59,54 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
         if #available(iOS 9.0, *) {
             manager.allowsBackgroundLocationUpdates = true
         }
+        // One-shot manager за silent push — споделя delegate-а.
+        oneShotManager.delegate = self
+        oneShotManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        if #available(iOS 9.0, *) {
+            oneShotManager.allowsBackgroundLocationUpdates = true
+        }
+        IosLocationBridge.sharedInstance = self
         NSLog("[\(IosLocationBridge.TAG)] loaded; current auth=\(authStatusString())")
     }
+
+    /// Singleton ref за достъп от AppDelegate (silent-push handler).
+    public static weak var sharedInstance: IosLocationBridge?
+
+    /**
+     * Извиква се от AppDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:)
+     * когато получим silent push с `type=location_refresh`. Пуска еднократен
+     * location request, качва резултата и вика completion (или newData/noData).
+     *
+     * Това е iOS аналог на Android `LocationRefreshForegroundService` —
+     * работи дори когато webview-а е suspended/убит, защото се изпълнява в
+     * native AppDelegate context-а с гарантираните ~30s background time.
+     */
+    @objc public func handleSilentLocationRefreshPush(
+        completion: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        let status = currentStatus()
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+            NSLog("[\(IosLocationBridge.TAG)] silent push: no location auth (\(authStatusString())) → noData")
+            completion(.noData)
+            return
+        }
+        NSLog("[\(IosLocationBridge.TAG)] silent push: requesting one-shot location")
+        pendingPushCompletions.append(completion)
+        // Watchdog — ако нищо не дойде до 25s, върни failed (преди iOS да ни убие).
+        let snapshotIndex = pendingPushCompletions.count - 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25.0) { [weak self] in
+            guard let self = self else { return }
+            if snapshotIndex < self.pendingPushCompletions.count {
+                let cb = self.pendingPushCompletions.remove(at: snapshotIndex)
+                NSLog("[\(IosLocationBridge.TAG)] silent push: watchdog timeout → failed")
+                cb(.failed)
+            }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.oneShotManager.requestLocation()
+        }
+    }
+
 
     // MARK: - JS API
 
@@ -139,17 +193,35 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
 
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        NSLog("[\(IosLocationBridge.TAG)] SLC fix lat=\(loc.coordinate.latitude) lng=\(loc.coordinate.longitude) acc=\(loc.horizontalAccuracy)")
-        uploadLocation(loc)
+        let isPushFix = manager === oneShotManager || !pendingPushCompletions.isEmpty
+        let source = isPushFix ? "native_ios_push" : "native_ios_slc"
+        NSLog("[\(IosLocationBridge.TAG)] fix (\(source)) lat=\(loc.coordinate.latitude) lng=\(loc.coordinate.longitude) acc=\(loc.horizontalAccuracy)")
+
+        if isPushFix && !pendingPushCompletions.isEmpty {
+            // Drain всички pending completions с този fix.
+            let cbs = pendingPushCompletions
+            pendingPushCompletions.removeAll()
+            uploadLocation(loc, source: source) { ok in
+                let result: UIBackgroundFetchResult = ok ? .newData : .failed
+                DispatchQueue.main.async { cbs.forEach { $0(result) } }
+            }
+        } else {
+            uploadLocation(loc, source: source)
+        }
         notifyJsLocation(loc)
     }
 
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         NSLog("[\(IosLocationBridge.TAG)] location error: \(error.localizedDescription)")
-        // Маркираме flag — UI ще покаже banner че background не работи.
         let nsErr = error as NSError
         if nsErr.code == CLError.denied.rawValue {
             UserDefaults.standard.set(Date().timeIntervalSince1970 * 1000, forKey: IosLocationBridge.DEFAULTS_MISSING_AT)
+        }
+        // Ако грешката е от one-shot заявка → резолвни pending push completions.
+        if manager === oneShotManager && !pendingPushCompletions.isEmpty {
+            let cbs = pendingPushCompletions
+            pendingPushCompletions.removeAll()
+            DispatchQueue.main.async { cbs.forEach { $0(.failed) } }
         }
     }
 
@@ -214,18 +286,22 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
      * native upload — без user JWT, използва (user_id, device_id) pair-а
      * валидиран срещу push_tokens row.
      */
-    private func uploadLocation(_ loc: CLLocation) {
+    private func uploadLocation(_ loc: CLLocation, source: String = "native_ios_slc", completion: ((Bool) -> Void)? = nil) {
         let defaults = UserDefaults.standard
         guard let userId = defaults.string(forKey: IosLocationBridge.DEFAULTS_USER),
               let deviceId = defaults.string(forKey: IosLocationBridge.DEFAULTS_DEVICE),
               let baseUrl = defaults.string(forKey: IosLocationBridge.DEFAULTS_SUPABASE_URL),
               !userId.isEmpty, !deviceId.isEmpty, !baseUrl.isEmpty else {
             NSLog("[\(IosLocationBridge.TAG)] upload SKIP: missing creds in UserDefaults")
+            completion?(false)
             return
         }
         let platform = defaults.string(forKey: IosLocationBridge.DEFAULTS_DEVICE_PLATFORM) ?? "ios"
 
-        guard let url = URL(string: "\(baseUrl)/functions/v1/location-refresh-upload") else { return }
+        guard let url = URL(string: "\(baseUrl)/functions/v1/location-refresh-upload") else {
+            completion?(false)
+            return
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -241,21 +317,29 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
             "longitude": loc.coordinate.longitude,
             "accuracy": loc.horizontalAccuracy,
             "timestamp": formatter.string(from: loc.timestamp),
-            "source": "native_ios_slc",
+            "source": source,
             "devicePlatform": platform
         ]
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
+            completion?(false)
+            return
+        }
         req.httpBody = payload
 
         let task = URLSession.shared.dataTask(with: req) { data, response, error in
             if let error = error {
                 NSLog("[\(IosLocationBridge.TAG)] upload FAILED: \(error.localizedDescription)")
+                completion?(false)
                 return
             }
             if let http = response as? HTTPURLResponse {
                 NSLog("[\(IosLocationBridge.TAG)] upload status=\(http.statusCode)")
+                completion?(http.statusCode >= 200 && http.statusCode < 300)
+            } else {
+                completion?(false)
             }
         }
         task.resume()
     }
 }
+

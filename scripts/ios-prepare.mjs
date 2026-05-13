@@ -191,6 +191,48 @@ function patchAppDelegate() {
     info('   ✓ APNs forwarder methods already present');
   }
 
+  // ---------------------------------------------------------------------
+  // КРИТИЧНО: Silent push handler за `type=location_refresh` data-only
+  // notifications. Без това iOS не пуска location refresh когато webview-а
+  // е suspended (заключен екран). Препраща към IosLocationBridge native
+  // handler, който прави one-shot CLLocationManager.requestLocation() и
+  // качва резултата директно през URLSession (заобикаля JS bridge).
+  // ---------------------------------------------------------------------
+  const SILENT_MARK = '// FAM_LOC_SILENT_PUSH_HANDLER';
+  if (!src.includes(SILENT_MARK)) {
+    const block =
+`\n    ${SILENT_MARK}\n` +
+`    func application(_ application: UIApplication,\n` +
+`                     didReceiveRemoteNotification userInfo: [AnyHashable: Any],\n` +
+`                     fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void) {\n` +
+`        let type = (userInfo["type"] as? String) ?? ((userInfo["data"] as? [String: Any])?["type"] as? String)\n` +
+`        if type == "location_refresh" {\n` +
+`            NSLog("[FamLocIOS] silent push received → native handler")\n` +
+`            if let bridge = IosLocationBridge.sharedInstance {\n` +
+`                bridge.handleSilentLocationRefreshPush(completion: completionHandler)\n` +
+`                return\n` +
+`            }\n` +
+`            NSLog("[FamLocIOS] silent push: bridge nil → noData")\n` +
+`            completionHandler(.noData)\n` +
+`            return\n` +
+`        }\n` +
+`        // Други нотификации → препрати към Capacitor PushNotifications.\n` +
+`        NotificationCenter.default.post(\n` +
+`            name: Notification.Name(rawValue: "didReceiveRemoteNotification"),\n` +
+`            object: completionHandler,\n` +
+`            userInfo: userInfo\n` +
+`        )\n` +
+`        completionHandler(.newData)\n` +
+`    }\n`;
+    const lastBrace = src.lastIndexOf('}');
+    if (lastBrace > 0) {
+      src = src.slice(0, lastBrace) + block + '\n' + src.slice(lastBrace);
+      info('   + silent push handler (didReceiveRemoteNotification:fetchCompletionHandler)');
+    }
+  } else {
+    info('   ✓ silent push handler already present');
+  }
+
   write(APP_DELEGATE, src);
   info('   ✓ AppDelegate patched');
 }
