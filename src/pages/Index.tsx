@@ -142,6 +142,13 @@ const Index = () => {
       animate={{ opacity: 1, x: 0 }}
       className="bg-card rounded-xl border border-border overflow-hidden shadow-sm h-[calc(100vh-200px)] lg:h-full"
     >
+      {selectedCircle && (
+        <div className="px-3 py-1.5 bg-muted/50 border-b border-border/50">
+          <p className="text-xs text-muted-foreground text-center font-medium truncate">
+            {selectedCircle.name}
+          </p>
+        </div>
+      )}
       {selectedCircle && members && members.length > 0 ? (
         <LocationMap
           members={members}
