@@ -206,7 +206,7 @@ jobs:
       - name: Run iOS prepare (copy native bridge + patch AppDelegate/Info.plist)
         run: bun run ios:prepare
 
-      - name: Add IosLocationBridge.swift to Xcode project (Compile Sources)
+      - name: Add IosLocationBridge.swift + GoogleService-Info.plist to Xcode project
         working-directory: ios/App
         run: |
           set -e
@@ -220,13 +220,12 @@ jobs:
           target = project.targets.find { |t| t.name == 'App' }
           raise 'App target not found' unless target
 
+          # ---- IosLocationBridge.swift → Compile Sources ----
           bridge_rel = 'App/IosLocationBridge.swift'
           bridge_abs = File.expand_path(bridge_rel)
           unless File.exist?(bridge_abs)
             raise "Bridge file missing at #{bridge_abs} — ios:prepare did not copy it."
           end
-
-          # Already present?
           existing = target.source_build_phase.files_references.find { |r| r && r.path && r.path.end_with?('IosLocationBridge.swift') }
           if existing
             puts "ℹ️ IosLocationBridge.swift already in Compile Sources."
@@ -237,6 +236,25 @@ jobs:
             target.add_file_references([file_ref])
             puts "✅ IosLocationBridge.swift added to App target."
           end
+
+          # ---- GoogleService-Info.plist → Resources (за Firebase iOS init) ----
+          gsi_rel = 'App/GoogleService-Info.plist'
+          gsi_abs = File.expand_path(gsi_rel)
+          if File.exist?(gsi_abs)
+            existing_res = target.resources_build_phase.files_references.find { |r| r && r.path && r.path.end_with?('GoogleService-Info.plist') }
+            if existing_res
+              puts "ℹ️ GoogleService-Info.plist already in Resources."
+            else
+              app_group = project.main_group.find_subpath('App', true)
+              gsi_ref = app_group.files.find { |f| f.path == 'GoogleService-Info.plist' }
+              gsi_ref ||= app_group.new_reference('GoogleService-Info.plist')
+              target.resources_build_phase.add_file_reference(gsi_ref, true)
+              puts "✅ GoogleService-Info.plist added to Resources."
+            end
+          else
+            puts "⚠️ GoogleService-Info.plist not found at #{gsi_abs} — Firebase iOS messaging will fail."
+          end
+
           project.save
           RUBY
 
