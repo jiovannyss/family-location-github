@@ -19,6 +19,8 @@ import { toast } from 'sonner';
 
 export default function Header() {
   const { user, signOut } = useAuth();
+  const { profile, isLoading } = useProfile();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Защита: гарантираме че Radix не оставя pointer-events:none върху body
@@ -38,8 +40,6 @@ export default function Header() {
     }, 50);
   };
 
-  const { profile, isLoading } = useProfile();
-  const navigate = useNavigate();
 
   const handleSignOut = async () => {
     await signOut();
