@@ -193,17 +193,35 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
 
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        NSLog("[\(IosLocationBridge.TAG)] SLC fix lat=\(loc.coordinate.latitude) lng=\(loc.coordinate.longitude) acc=\(loc.horizontalAccuracy)")
-        uploadLocation(loc)
+        let isPushFix = manager === oneShotManager || !pendingPushCompletions.isEmpty
+        let source = isPushFix ? "native_ios_push" : "native_ios_slc"
+        NSLog("[\(IosLocationBridge.TAG)] fix (\(source)) lat=\(loc.coordinate.latitude) lng=\(loc.coordinate.longitude) acc=\(loc.horizontalAccuracy)")
+
+        if isPushFix && !pendingPushCompletions.isEmpty {
+            // Drain всички pending completions с този fix.
+            let cbs = pendingPushCompletions
+            pendingPushCompletions.removeAll()
+            uploadLocation(loc, source: source) { ok in
+                let result: UIBackgroundFetchResult = ok ? .newData : .failed
+                DispatchQueue.main.async { cbs.forEach { $0(result) } }
+            }
+        } else {
+            uploadLocation(loc, source: source)
+        }
         notifyJsLocation(loc)
     }
 
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         NSLog("[\(IosLocationBridge.TAG)] location error: \(error.localizedDescription)")
-        // Маркираме flag — UI ще покаже banner че background не работи.
         let nsErr = error as NSError
         if nsErr.code == CLError.denied.rawValue {
             UserDefaults.standard.set(Date().timeIntervalSince1970 * 1000, forKey: IosLocationBridge.DEFAULTS_MISSING_AT)
+        }
+        // Ако грешката е от one-shot заявка → резолвни pending push completions.
+        if manager === oneShotManager && !pendingPushCompletions.isEmpty {
+            let cbs = pendingPushCompletions
+            pendingPushCompletions.removeAll()
+            DispatchQueue.main.async { cbs.forEach { $0(.failed) } }
         }
     }
 
