@@ -529,8 +529,99 @@ function nextRegisterInvocationId() {
 class NativePushService implements PushService {
   isSupported() { return true; }
 
+  async saveTokenPublic(userId: string, token: string, invocationId?: string) {
+    return this.saveToken(userId, token, invocationId);
+  }
+
   async registerForUser(userId: string): Promise<void> {
     void setCachedPushUid(userId);
+    if (isIosPlatform()) {
+      return this.registerForUserIos(userId);
+    }
+    return this.registerForUserAndroid(userId);
+  }
+
+  private async registerForUserIos(userId: string): Promise<void> {
+    const invocationId = nextRegisterInvocationId();
+    activeRegisterInvocationCount += 1;
+    pushDiag.lifecycleStarted = true;
+    pushDiag.registerCalled = false;
+    pushDiag.registerCallError = null;
+    pushDiag.registrationEventFired = false;
+    pushDiag.registrationError = null;
+    pushDiag.lastDbUpsertError = null;
+    pushDiag.earlyReturnReason = null;
+    pushDiag.listenersAttached = false;
+    pushLog(`${invocationId} ENTER registerForUser (ios fcm)`, { userId });
+
+    try {
+      if (PUSH_DISABLED) {
+        pushDiag.earlyReturnReason = 'push disabled';
+        return;
+      }
+      const m = await import('@capacitor-firebase/messaging');
+      const FM = m?.FirebaseMessaging;
+      if (!FM) {
+        pushDiag.pluginLoadError = 'FirebaseMessaging export missing';
+        pushDiag.earlyReturnReason = pushDiag.pluginLoadError;
+        pushLog(`${invocationId} RETURN FirebaseMessaging missing`);
+        return;
+      }
+      pushDiag.pluginLoadError = null;
+
+      let perm = await FM.checkPermissions();
+      pushDiag.lastPermissionState = perm.receive;
+      pushLog(`${invocationId} ios fcm checkPermissions`, { receive: perm.receive });
+      if (perm.receive !== 'granted') {
+        perm = await FM.requestPermissions();
+        pushDiag.lastPermissionState = perm.receive;
+        pushLog(`${invocationId} ios fcm requestPermissions`, { receive: perm.receive });
+      }
+      if (perm.receive !== 'granted') {
+        pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
+        pushDiag.earlyReturnReason = pushDiag.registerCallError;
+        return;
+      }
+
+      pushDiag.registerCalled = true;
+      // FirebaseMessaging.getToken() прави цялата dance: APNs регистрация →
+      // APNs token → размяна с Firebase backend → FCM token (същият формат
+      // като Android, ~150+ chars). send-push edge function го third като FCM v1.
+      const result = await Promise.race([
+        FM.getToken(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('FirebaseMessaging.getToken() timeout 25000ms')), 25000),
+        ),
+      ]);
+      const token = (result as { token?: string })?.token ?? '';
+      if (!token) {
+        pushDiag.registrationError = 'empty token from FirebaseMessaging';
+        pushDiag.earlyReturnReason = pushDiag.registrationError;
+        pushLog(`${invocationId} ios fcm empty token`);
+        return;
+      }
+      pushDiag.registrationEventFired = true;
+      pushDiag.lastTokenLength = token.length;
+      pushDiag.lastTokenAt = new Date().toISOString();
+      pushLog(`${invocationId} ios fcm token received`, { tokenLength: token.length });
+
+      await this.saveToken(userId, token, invocationId);
+      pushLog(`${invocationId} RETURN success (ios fcm)`);
+    } catch (e) {
+      const err = e as Error;
+      pushDiag.registerCallError = err?.message || String(e);
+      pushDiag.earlyReturnReason = pushDiag.registerCallError;
+      pushLog(`${invocationId} THROW registerForUser (ios fcm)`, {
+        error: pushDiag.registerCallError,
+        stack: err?.stack || '(no stack)',
+      });
+      throw e;
+    } finally {
+      activeRegisterInvocationCount = Math.max(0, activeRegisterInvocationCount - 1);
+    }
+  }
+
+  private async registerForUserAndroid(userId: string): Promise<void> {
     const invocationId = nextRegisterInvocationId();
     activeRegisterInvocationCount += 1;
 
