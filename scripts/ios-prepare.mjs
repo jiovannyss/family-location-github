@@ -119,6 +119,16 @@ function copyBridge() {
   fs.copyFileSync(SRC_BRIDGE, DST_BRIDGE);
 }
 
+function copyGoogleServiceInfo() {
+  if (!exists(SRC_GSI)) {
+    info('   ⚠ ios-native/GoogleService-Info.plist липсва — Firebase Messaging НЯМА да работи на iOS!');
+    return false;
+  }
+  info('🔧 Copying GoogleService-Info.plist → ios/App/App/');
+  fs.copyFileSync(SRC_GSI, DST_GSI);
+  return true;
+}
+
 // =========================================================================
 // 3) Patch AppDelegate.swift — регистрирай plugin
 // =========================================================================
