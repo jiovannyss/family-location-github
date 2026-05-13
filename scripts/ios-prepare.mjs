@@ -76,6 +76,14 @@ function patchInfoPlist() {
     '<string>Получавайте съобщения от членовете на кръга си и важни известия за местоположение.</string>'
   );
 
+  // App Store изискване — декларираме че не използваме нестандартна криптография.
+  // Добавяме като raw <false/> (не string).
+  if (!src.includes('<key>ITSAppUsesNonExemptEncryption</key>')) {
+    const insertion = `\t<key>ITSAppUsesNonExemptEncryption</key>\n\t<false/>\n`;
+    src = src.replace(/<\/dict>\s*<\/plist>\s*$/, insertion + '</dict>\n</plist>\n');
+    info('   + ITSAppUsesNonExemptEncryption=false');
+  }
+
   // UIBackgroundModes — добавяме като array ако липсва
   if (!src.includes('<key>UIBackgroundModes</key>')) {
     const block =

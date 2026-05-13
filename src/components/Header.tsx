@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { useState, useEffect } from 'react';
 import { MapPin, Settings, LogOut, Loader2, User, Bell, FileText, Shield, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -20,6 +21,25 @@ export default function Header() {
   const { user, signOut } = useAuth();
   const { profile, isLoading } = useProfile();
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Защита: гарантираме че Radix не оставя pointer-events:none върху body
+  // (известен бъг когато menu се затваря едновременно с route change/unmount).
+  useEffect(() => {
+    return () => {
+      document.body.style.pointerEvents = '';
+    };
+  }, []);
+
+  const go = (path: string) => {
+    setMenuOpen(false);
+    // Изчакваме Radix close cleanup-а преди навигация.
+    setTimeout(() => {
+      document.body.style.pointerEvents = '';
+      navigate(path);
+    }, 50);
+  };
+
 
   const handleSignOut = async () => {
     await signOut();
@@ -55,7 +75,7 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <DropdownMenu modal={false}>
+          <DropdownMenu modal={false} open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-10 w-10 rounded-full p-0 touch-manipulation">
               {isLoading ? (
@@ -80,30 +100,31 @@ export default function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate('/profile')}>
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); go('/profile'); }}>
               <User className="w-4 h-4 mr-2" />
               Профил
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/settings')}>
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); go('/settings'); }}>
               <Settings className="w-4 h-4 mr-2" />
               Настройки
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/push-diagnostics')}>
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); go('/push-diagnostics'); }}>
               <Bell className="w-4 h-4 mr-2" />
               Push диагностика
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/documents')}>
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); go('/documents'); }}>
               <FileText className="w-4 h-4 mr-2" />
               Документи
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/privacy-data')}>
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); go('/privacy-data'); }}>
               <Shield className="w-4 h-4 mr-2" />
               Поверителност и данни
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/about')}>
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); go('/about')}}>
               <Info className="w-4 h-4 mr-2" />
               За приложението
             </DropdownMenuItem>
+
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
               <LogOut className="w-4 h-4 mr-2" />
