@@ -244,7 +244,12 @@ export default function LocationMap({ members, selectedMember, currentUserId }: 
 
   const getTimeAgo = (dateStr: string) => {
     try {
-      return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: bg });
+      const date = new Date(dateStr);
+      const seconds = differenceInSeconds(new Date(), date);
+      if (seconds < 60) {
+        return 'току що';
+      }
+      return formatDistanceToNow(date, { addSuffix: true, locale: bg });
     } catch {
       return 'неизвестно';
     }
