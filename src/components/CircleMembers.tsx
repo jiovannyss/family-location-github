@@ -73,7 +73,10 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
 
   const getTimeAgo = (dateStr: string) => {
     try {
-      return formatDistanceToNow(new Date(dateStr), { addSuffix: true, locale: bg });
+      const date = new Date(dateStr);
+      const seconds = differenceInSeconds(new Date(), date);
+      if (seconds >= 0 && seconds < 60) return 'току що';
+      return formatDistanceToNow(date, { addSuffix: true, locale: bg });
     } catch {
       return 'неизвестно';
     }
