@@ -59,8 +59,54 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
         if #available(iOS 9.0, *) {
             manager.allowsBackgroundLocationUpdates = true
         }
+        // One-shot manager за silent push — споделя delegate-а.
+        oneShotManager.delegate = self
+        oneShotManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        if #available(iOS 9.0, *) {
+            oneShotManager.allowsBackgroundLocationUpdates = true
+        }
+        IosLocationBridge.sharedInstance = self
         NSLog("[\(IosLocationBridge.TAG)] loaded; current auth=\(authStatusString())")
     }
+
+    /// Singleton ref за достъп от AppDelegate (silent-push handler).
+    public static weak var sharedInstance: IosLocationBridge?
+
+    /**
+     * Извиква се от AppDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:)
+     * когато получим silent push с `type=location_refresh`. Пуска еднократен
+     * location request, качва резултата и вика completion (или newData/noData).
+     *
+     * Това е iOS аналог на Android `LocationRefreshForegroundService` —
+     * работи дори когато webview-а е suspended/убит, защото се изпълнява в
+     * native AppDelegate context-а с гарантираните ~30s background time.
+     */
+    @objc public func handleSilentLocationRefreshPush(
+        completion: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        let status = currentStatus()
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+            NSLog("[\(IosLocationBridge.TAG)] silent push: no location auth (\(authStatusString())) → noData")
+            completion(.noData)
+            return
+        }
+        NSLog("[\(IosLocationBridge.TAG)] silent push: requesting one-shot location")
+        pendingPushCompletions.append(completion)
+        // Watchdog — ако нищо не дойде до 25s, върни failed (преди iOS да ни убие).
+        let snapshotIndex = pendingPushCompletions.count - 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 25.0) { [weak self] in
+            guard let self = self else { return }
+            if snapshotIndex < self.pendingPushCompletions.count {
+                let cb = self.pendingPushCompletions.remove(at: snapshotIndex)
+                NSLog("[\(IosLocationBridge.TAG)] silent push: watchdog timeout → failed")
+                cb(.failed)
+            }
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.oneShotManager.requestLocation()
+        }
+    }
+
 
     // MARK: - JS API
 
