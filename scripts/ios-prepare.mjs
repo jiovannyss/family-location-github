@@ -188,6 +188,39 @@ function patchAppDelegate() {
 }
 
 // =========================================================================
+// 3b) Patch AppDelegate.swift — Firebase init (idempotent, отделно)
+// =========================================================================
+function patchAppDelegateFirebase() {
+  if (!exists(APP_DELEGATE)) return;
+  info(`🔧 Adding Firebase init to ${path.relative(ROOT, APP_DELEGATE)}`);
+  let src = read(APP_DELEGATE);
+  let changed = false;
+
+  if (!src.includes('import FirebaseCore')) {
+    src = src.replace(/import Capacitor/, 'import Capacitor\nimport FirebaseCore');
+    changed = true;
+    info('   + import FirebaseCore');
+  }
+
+  if (!src.includes('FirebaseApp.configure()')) {
+    const m = src.match(/func application\([^)]*didFinishLaunchingWithOptions[^)]*\)[^{]*\{/);
+    if (m) {
+      const insertAt = m.index + m[0].length;
+      src = src.slice(0, insertAt) +
+        '\n        // FAM_LOC_FIREBASE_INIT\n        FirebaseApp.configure()\n' +
+        src.slice(insertAt);
+      changed = true;
+      info('   + FirebaseApp.configure() в didFinishLaunchingWithOptions');
+    } else {
+      info('   ⚠ Не намерих didFinishLaunchingWithOptions — Firebase init НЕ е добавен');
+    }
+  }
+
+  if (changed) write(APP_DELEGATE, src);
+  else info('   ✓ Firebase init already present');
+}
+
+// =========================================================================
 // 4) Entitlements stub (Push + APS environment)
 // =========================================================================
 function patchEntitlements() {
