@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MemberWithLocation } from '@/lib/types';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, differenceInSeconds } from 'date-fns';
 import { bg } from 'date-fns/locale';
 import { getMapStyleConfig, getStoredMapStyle, MAP_STYLES, MapStyleId, MapStyleConfig } from '@/lib/mapStyle';
 import MapStyleButton from './MapStyleButton';
