@@ -259,7 +259,9 @@ function main() {
   }
   patchInfoPlist();
   copyBridge();
+  copyGoogleServiceInfo();
   patchAppDelegate();
+  patchAppDelegateFirebase();
   patchEntitlements();
   info('✅ iOS prepare готово.');
   info('');
