@@ -31,6 +31,8 @@ const APP_DELEGATE = path.join(IOS_APP_DIR, 'AppDelegate.swift');
 const ENTITLEMENTS = path.join(IOS_APP_DIR, 'App.entitlements');
 const SRC_BRIDGE = path.join(ROOT, 'ios-native/IosLocationBridge.swift');
 const DST_BRIDGE = path.join(IOS_APP_DIR, 'IosLocationBridge.swift');
+const SRC_GSI = path.join(ROOT, 'ios-native/GoogleService-Info.plist');
+const DST_GSI = path.join(IOS_APP_DIR, 'GoogleService-Info.plist');
 
 function fail(msg) { console.error(`❌ ${msg}`); process.exit(1); }
 function info(msg) { console.log(msg); }
@@ -117,6 +119,16 @@ function copyBridge() {
   fs.copyFileSync(SRC_BRIDGE, DST_BRIDGE);
 }
 
+function copyGoogleServiceInfo() {
+  if (!exists(SRC_GSI)) {
+    info('   ⚠ ios-native/GoogleService-Info.plist липсва — Firebase Messaging НЯМА да работи на iOS!');
+    return false;
+  }
+  info('🔧 Copying GoogleService-Info.plist → ios/App/App/');
+  fs.copyFileSync(SRC_GSI, DST_GSI);
+  return true;
+}
+
 // =========================================================================
 // 3) Patch AppDelegate.swift — регистрирай plugin
 // =========================================================================
@@ -176,6 +188,39 @@ function patchAppDelegate() {
 }
 
 // =========================================================================
+// 3b) Patch AppDelegate.swift — Firebase init (idempotent, отделно)
+// =========================================================================
+function patchAppDelegateFirebase() {
+  if (!exists(APP_DELEGATE)) return;
+  info(`🔧 Adding Firebase init to ${path.relative(ROOT, APP_DELEGATE)}`);
+  let src = read(APP_DELEGATE);
+  let changed = false;
+
+  if (!src.includes('import FirebaseCore')) {
+    src = src.replace(/import Capacitor/, 'import Capacitor\nimport FirebaseCore');
+    changed = true;
+    info('   + import FirebaseCore');
+  }
+
+  if (!src.includes('FirebaseApp.configure()')) {
+    const m = src.match(/func application\([^)]*didFinishLaunchingWithOptions[^)]*\)[^{]*\{/);
+    if (m) {
+      const insertAt = m.index + m[0].length;
+      src = src.slice(0, insertAt) +
+        '\n        // FAM_LOC_FIREBASE_INIT\n        FirebaseApp.configure()\n' +
+        src.slice(insertAt);
+      changed = true;
+      info('   + FirebaseApp.configure() в didFinishLaunchingWithOptions');
+    } else {
+      info('   ⚠ Не намерих didFinishLaunchingWithOptions — Firebase init НЕ е добавен');
+    }
+  }
+
+  if (changed) write(APP_DELEGATE, src);
+  else info('   ✓ Firebase init already present');
+}
+
+// =========================================================================
 // 4) Entitlements stub (Push + APS environment)
 // =========================================================================
 function patchEntitlements() {
@@ -214,7 +259,9 @@ function main() {
   }
   patchInfoPlist();
   copyBridge();
+  copyGoogleServiceInfo();
   patchAppDelegate();
+  patchAppDelegateFirebase();
   patchEntitlements();
   info('✅ iOS prepare готово.');
   info('');

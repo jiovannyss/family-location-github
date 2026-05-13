@@ -370,17 +370,66 @@ async function handleLocationRefreshPush(source: string) {
   }
 }
 
+function isIosPlatform(): boolean {
+  return nativePlatform() === 'ios';
+}
+
 let deliveryListenersAttached = false;
 async function attachDeliveryListenersOnce() {
   if (deliveryListenersAttached) return;
   if (!isNative() || PUSH_DISABLED) return;
+  const appState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
+  pushLog('delivery listeners attaching', { appState, ios: isIosPlatform() });
+
   try {
+    if (isIosPlatform()) {
+      // ---- iOS: @capacitor-firebase/messaging (FCM SDK over APNs) ----
+      const m = await import('@capacitor-firebase/messaging');
+      const FM = m?.FirebaseMessaging;
+      if (!FM) {
+        pushLog('iOS FirebaseMessaging export missing');
+        return;
+      }
+      deliveryListenersAttached = true;
+      await FM.addListener('notificationReceived', (event) => {
+        const notif = (event as { notification?: { data?: Record<string, unknown>; title?: string; body?: string } })?.notification ?? {};
+        const data = notif.data ?? {};
+        const fgState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
+        pushLog('push received (ios fcm)', {
+          foregroundState: fgState,
+          title: notif.title ?? null,
+          body: notif.body ?? null,
+          data,
+        });
+        if (data?.type === 'location_refresh') {
+          void handleLocationRefreshPush('fcm:notificationReceived');
+        }
+      });
+      await FM.addListener('notificationActionPerformed', (event) => {
+        const data = (event as { notification?: { data?: Record<string, unknown> } })?.notification?.data ?? {};
+        pushLog('push action performed (ios fcm tap)', { data });
+        if (data?.type === 'location_refresh') {
+          void handleLocationRefreshPush('fcm:notificationActionPerformed');
+        }
+      });
+      // tokenReceived — fired ако FCM rotate-не token-а; пре-upsert към БД.
+      await FM.addListener('tokenReceived', (event) => {
+        const token = (event as { token?: string })?.token ?? '';
+        pushLog('ios fcm tokenReceived (rotation)', { tokenLength: token.length });
+        if (!token) return;
+        void getCachedPushUid().then((uid) => {
+          if (uid) void nativePushService.saveTokenPublic(uid, token, 'ios-token-rotation');
+        });
+      });
+      pushLog('delivery listeners attached (ios fcm)');
+      return;
+    }
+
+    // ---- Android: @capacitor/push-notifications ----
     const m = await import('@capacitor/push-notifications');
     const Push = m?.PushNotifications;
     if (!Push) return;
     deliveryListenersAttached = true;
-    const appState = (typeof document !== 'undefined' && document.visibilityState) || 'unknown';
-    pushLog('delivery listeners attaching', { appState });
 
     await Push.addListener('pushNotificationReceived', (notif) => {
       const data = (notif as { data?: Record<string, unknown> })?.data ?? {};
@@ -403,7 +452,7 @@ async function attachDeliveryListenersOnce() {
         void handleLocationRefreshPush('pushNotificationActionPerformed');
       }
     });
-    pushLog('delivery listeners attached');
+    pushLog('delivery listeners attached (android)');
   } catch (e) {
     pushLog('delivery listeners attach failed', { error: (e as Error)?.message || String(e) });
   }
@@ -480,8 +529,99 @@ function nextRegisterInvocationId() {
 class NativePushService implements PushService {
   isSupported() { return true; }
 
+  async saveTokenPublic(userId: string, token: string, invocationId?: string) {
+    return this.saveToken(userId, token, invocationId);
+  }
+
   async registerForUser(userId: string): Promise<void> {
     void setCachedPushUid(userId);
+    if (isIosPlatform()) {
+      return this.registerForUserIos(userId);
+    }
+    return this.registerForUserAndroid(userId);
+  }
+
+  private async registerForUserIos(userId: string): Promise<void> {
+    const invocationId = nextRegisterInvocationId();
+    activeRegisterInvocationCount += 1;
+    pushDiag.lifecycleStarted = true;
+    pushDiag.registerCalled = false;
+    pushDiag.registerCallError = null;
+    pushDiag.registrationEventFired = false;
+    pushDiag.registrationError = null;
+    pushDiag.lastDbUpsertError = null;
+    pushDiag.earlyReturnReason = null;
+    pushDiag.listenersAttached = false;
+    pushLog(`${invocationId} ENTER registerForUser (ios fcm)`, { userId });
+
+    try {
+      if (PUSH_DISABLED) {
+        pushDiag.earlyReturnReason = 'push disabled';
+        return;
+      }
+      const m = await import('@capacitor-firebase/messaging');
+      const FM = m?.FirebaseMessaging;
+      if (!FM) {
+        pushDiag.pluginLoadError = 'FirebaseMessaging export missing';
+        pushDiag.earlyReturnReason = pushDiag.pluginLoadError;
+        pushLog(`${invocationId} RETURN FirebaseMessaging missing`);
+        return;
+      }
+      pushDiag.pluginLoadError = null;
+
+      let perm = await FM.checkPermissions();
+      pushDiag.lastPermissionState = perm.receive;
+      pushLog(`${invocationId} ios fcm checkPermissions`, { receive: perm.receive });
+      if (perm.receive !== 'granted') {
+        perm = await FM.requestPermissions();
+        pushDiag.lastPermissionState = perm.receive;
+        pushLog(`${invocationId} ios fcm requestPermissions`, { receive: perm.receive });
+      }
+      if (perm.receive !== 'granted') {
+        pushDiag.registerCallError = 'permission not granted: ' + perm.receive;
+        pushDiag.earlyReturnReason = pushDiag.registerCallError;
+        return;
+      }
+
+      pushDiag.registerCalled = true;
+      // FirebaseMessaging.getToken() прави цялата dance: APNs регистрация →
+      // APNs token → размяна с Firebase backend → FCM token (същият формат
+      // като Android, ~150+ chars). send-push edge function го third като FCM v1.
+      const result = await Promise.race([
+        FM.getToken(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('FirebaseMessaging.getToken() timeout 25000ms')), 25000),
+        ),
+      ]);
+      const token = (result as { token?: string })?.token ?? '';
+      if (!token) {
+        pushDiag.registrationError = 'empty token from FirebaseMessaging';
+        pushDiag.earlyReturnReason = pushDiag.registrationError;
+        pushLog(`${invocationId} ios fcm empty token`);
+        return;
+      }
+      pushDiag.registrationEventFired = true;
+      pushDiag.lastTokenLength = token.length;
+      pushDiag.lastTokenAt = new Date().toISOString();
+      pushLog(`${invocationId} ios fcm token received`, { tokenLength: token.length });
+
+      await this.saveToken(userId, token, invocationId);
+      pushLog(`${invocationId} RETURN success (ios fcm)`);
+    } catch (e) {
+      const err = e as Error;
+      pushDiag.registerCallError = err?.message || String(e);
+      pushDiag.earlyReturnReason = pushDiag.registerCallError;
+      pushLog(`${invocationId} THROW registerForUser (ios fcm)`, {
+        error: pushDiag.registerCallError,
+        stack: err?.stack || '(no stack)',
+      });
+      throw e;
+    } finally {
+      activeRegisterInvocationCount = Math.max(0, activeRegisterInvocationCount - 1);
+    }
+  }
+
+  private async registerForUserAndroid(userId: string): Promise<void> {
     const invocationId = nextRegisterInvocationId();
     activeRegisterInvocationCount += 1;
 
