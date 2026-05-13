@@ -26,7 +26,7 @@ import {
 import { useCircleMembers, useInvites } from '@/hooks/useCircles';
 import { useAuth } from '@/hooks/useAuth';
 import { Circle, MemberWithLocation } from '@/lib/types';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, differenceInSeconds } from 'date-fns';
 import { bg } from 'date-fns/locale';
 import { toast } from 'sonner';
 import ChatDialog from './ChatDialog';
