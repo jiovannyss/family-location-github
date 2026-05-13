@@ -31,6 +31,8 @@ const APP_DELEGATE = path.join(IOS_APP_DIR, 'AppDelegate.swift');
 const ENTITLEMENTS = path.join(IOS_APP_DIR, 'App.entitlements');
 const SRC_BRIDGE = path.join(ROOT, 'ios-native/IosLocationBridge.swift');
 const DST_BRIDGE = path.join(IOS_APP_DIR, 'IosLocationBridge.swift');
+const SRC_GSI = path.join(ROOT, 'ios-native/GoogleService-Info.plist');
+const DST_GSI = path.join(IOS_APP_DIR, 'GoogleService-Info.plist');
 
 function fail(msg) { console.error(`❌ ${msg}`); process.exit(1); }
 function info(msg) { console.log(msg); }
