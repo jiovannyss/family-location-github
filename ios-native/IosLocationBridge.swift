@@ -268,18 +268,22 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
      * native upload — без user JWT, използва (user_id, device_id) pair-а
      * валидиран срещу push_tokens row.
      */
-    private func uploadLocation(_ loc: CLLocation) {
+    private func uploadLocation(_ loc: CLLocation, source: String = "native_ios_slc", completion: ((Bool) -> Void)? = nil) {
         let defaults = UserDefaults.standard
         guard let userId = defaults.string(forKey: IosLocationBridge.DEFAULTS_USER),
               let deviceId = defaults.string(forKey: IosLocationBridge.DEFAULTS_DEVICE),
               let baseUrl = defaults.string(forKey: IosLocationBridge.DEFAULTS_SUPABASE_URL),
               !userId.isEmpty, !deviceId.isEmpty, !baseUrl.isEmpty else {
             NSLog("[\(IosLocationBridge.TAG)] upload SKIP: missing creds in UserDefaults")
+            completion?(false)
             return
         }
         let platform = defaults.string(forKey: IosLocationBridge.DEFAULTS_DEVICE_PLATFORM) ?? "ios"
 
-        guard let url = URL(string: "\(baseUrl)/functions/v1/location-refresh-upload") else { return }
+        guard let url = URL(string: "\(baseUrl)/functions/v1/location-refresh-upload") else {
+            completion?(false)
+            return
+        }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -295,21 +299,29 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
             "longitude": loc.coordinate.longitude,
             "accuracy": loc.horizontalAccuracy,
             "timestamp": formatter.string(from: loc.timestamp),
-            "source": "native_ios_slc",
+            "source": source,
             "devicePlatform": platform
         ]
-        guard let payload = try? JSONSerialization.data(withJSONObject: body) else { return }
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
+            completion?(false)
+            return
+        }
         req.httpBody = payload
 
         let task = URLSession.shared.dataTask(with: req) { data, response, error in
             if let error = error {
                 NSLog("[\(IosLocationBridge.TAG)] upload FAILED: \(error.localizedDescription)")
+                completion?(false)
                 return
             }
             if let http = response as? HTTPURLResponse {
                 NSLog("[\(IosLocationBridge.TAG)] upload status=\(http.statusCode)")
+                completion?(http.statusCode >= 200 && http.statusCode < 300)
+            } else {
+                completion?(false)
             }
         }
         task.resume()
     }
 }
+
