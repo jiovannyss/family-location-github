@@ -19,6 +19,25 @@ import { toast } from 'sonner';
 
 export default function Header() {
   const { user, signOut } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Защита: гарантираме че Radix не оставя pointer-events:none върху body
+  // (известен бъг когато menu се затваря едновременно с route change/unmount).
+  useEffect(() => {
+    return () => {
+      document.body.style.pointerEvents = '';
+    };
+  }, []);
+
+  const go = (path: string) => {
+    setMenuOpen(false);
+    // Изчакваме Radix close cleanup-а преди навигация.
+    setTimeout(() => {
+      document.body.style.pointerEvents = '';
+      navigate(path);
+    }, 50);
+  };
+
   const { profile, isLoading } = useProfile();
   const navigate = useNavigate();
 
