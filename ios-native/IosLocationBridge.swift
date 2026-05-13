@@ -36,11 +36,19 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
     private static let DEFAULTS_MISSING_AT = "fam_bg_perm_missing_at"
 
     private let manager = CLLocationManager()
+    /// Отделен manager за еднократен fix при silent push (за да не интерферира с SLC).
+    private let oneShotManager = CLLocationManager()
     private var slcStarted = false
     /// Когато requestAlways е извикан преди WhenInUse да е grant-нат,
     /// маркираме flag-а и пускаме requestAlwaysAuthorization() от
     /// delegate callback-а — иначе iOS игнорира заявката.
     private var pendingAlwaysRequest = false
+
+    /// Pending completion handlers за active silent-push refresh заявки.
+    /// iOS дава ~30s background time, след което UIBackgroundFetchResult трябва
+    /// да бъде извикан. Пазим до 3 paralleling заявки.
+    private var pendingPushCompletions: [(UIBackgroundFetchResult) -> Void] = []
+    private var pushRefreshInFlight = false
 
     public override func load() {
         manager.delegate = self
