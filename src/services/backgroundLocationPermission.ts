@@ -36,6 +36,8 @@ interface IosBridgePlugin {
   requestForeground(): Promise<{ foreground: string }>;
   requestAlways(): Promise<{ background: string }>;
   openAppSettings(): Promise<void>;
+  startTracking(): Promise<{ started: boolean; reason?: string }>;
+  stopTracking(): Promise<void>;
   startSlc(): Promise<{ started: boolean }>;
   stopSlc(): Promise<void>;
   clearMissingFlag(): Promise<void>;
@@ -168,15 +170,15 @@ export async function clearBackgroundMissingFlag(): Promise<void> {
 export async function startNativeBackgroundMonitoring(): Promise<void> {
   if (!isIosNative()) return;
   try {
-    await IosBridge.startSlc();
+    await IosBridge.startTracking();
   } catch (e) {
-    console.warn('[bg-perm] iOS startSlc failed', e);
+    console.warn('[bg-perm] iOS startTracking failed', e);
   }
 }
 
 export async function stopNativeBackgroundMonitoring(): Promise<void> {
   if (!isIosNative()) return;
-  try { await IosBridge.stopSlc(); } catch { /* ignore */ }
+  try { await IosBridge.stopTracking(); } catch { /* ignore */ }
 }
 
 export function isBackgroundPermissionRelevant(): boolean {
