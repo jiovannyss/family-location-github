@@ -270,7 +270,14 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         let isPushFix = manager === oneShotManager || !pendingPushCompletions.isEmpty
-        let source = isPushFix ? "native_ios_push" : "native_ios_slc"
+        let source: String
+        if isPushFix {
+            source = "native_ios_push"
+        } else if continuousStarted {
+            source = "native_ios_continuous"
+        } else {
+            source = "native_ios_slc"
+        }
         NSLog("[\(IosLocationBridge.TAG)] fix (\(source)) lat=\(loc.coordinate.latitude) lng=\(loc.coordinate.longitude) acc=\(loc.horizontalAccuracy)")
 
         if isPushFix && !pendingPushCompletions.isEmpty {
@@ -306,12 +313,21 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
                 self.manager.requestAlwaysAuthorization()
             }
         }
-        // Ако вече имаме Always и не сме стартирали SLC — стартирай автоматично.
-        if currentStatus() == .authorizedAlways && !slcStarted &&
-           CLLocationManager.significantLocationChangeMonitoringAvailable() {
-            manager.startMonitoringSignificantLocationChanges()
-            slcStarted = true
-            NSLog("[\(IosLocationBridge.TAG)] SLC auto-started after auth change")
+        // Ако вече имаме Always — стартирай continuous + SLC автоматично.
+        if currentStatus() == .authorizedAlways {
+            if !continuousStarted {
+                manager.startUpdatingLocation()
+                continuousStarted = true
+                NSLog("[\(IosLocationBridge.TAG)] continuous tracking auto-started after auth change")
+            }
+            if !slcStarted && CLLocationManager.significantLocationChangeMonitoringAvailable() {
+                manager.startMonitoringSignificantLocationChanges()
+                slcStarted = true
+                NSLog("[\(IosLocationBridge.TAG)] SLC auto-started after auth change")
+            }
+        } else if continuousStarted {
+            manager.stopUpdatingLocation()
+            continuousStarted = false
         }
     }
 
