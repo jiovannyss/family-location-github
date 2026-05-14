@@ -234,7 +234,7 @@ export default function CircleMembers({ circle, onMemberClick }: CircleMembersPr
                               <>
                                 <span className="flex items-center gap-1 whitespace-nowrap">
                                   <Clock className="w-3.5 h-3.5 flex-shrink-0" />
-                                  {getTimeAgo(member.last_location.recorded_at)}
+                                  Последно: {getTimeAgo(member.last_location.recorded_at)}
                                 </span>
                                 {member.last_location.accuracy_m && (
                                   <span className="flex items-center gap-1 whitespace-nowrap">

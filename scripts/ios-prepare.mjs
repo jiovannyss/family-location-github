@@ -208,12 +208,7 @@ function patchAppDelegate() {
 `        let type = (userInfo["type"] as? String) ?? ((userInfo["data"] as? [String: Any])?["type"] as? String)\n` +
 `        if type == "location_refresh" {\n` +
 `            NSLog("[FamLocIOS] silent push received → native handler")\n` +
-`            if let bridge = IosLocationBridge.sharedInstance {\n` +
-`                bridge.handleSilentLocationRefreshPush(completion: completionHandler)\n` +
-`                return\n` +
-`            }\n` +
-`            NSLog("[FamLocIOS] silent push: bridge nil → noData")\n` +
-`            completionHandler(.noData)\n` +
+`            IosLocationBridge.sharedHandler().handleSilentLocationRefreshPush(completion: completionHandler)\n` +
 `            return\n` +
 `        }\n` +
 `        // Други нотификации → препрати към Capacitor PushNotifications.\n` +
