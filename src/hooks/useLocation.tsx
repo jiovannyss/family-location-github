@@ -7,6 +7,7 @@ import { getDeviceId } from '@/services/deviceId';
 import { geolocation, type Coords } from '@/services/geolocation';
 import { getDeviceInfo } from '@/services/device';
 import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
+import { startNativeBackgroundMonitoring, stopNativeBackgroundMonitoring } from '@/services/backgroundLocationPermission';
 import { uploadLocationPoint } from '@/services/locationUpload';
 import { App as CapacitorApp } from '@capacitor/app';
 import { isNative } from '@/services/platform';
@@ -100,6 +101,24 @@ export function useLocationTracking() {
   const userIdRef = useRef<string | undefined>(user?.id);
   userIdRef.current = user?.id;
   const deviceId = getDeviceId();
+  const uploadCoords = async (coords: Coords) => {
+    const uid = userIdRef.current;
+    if (!uid) return;
+
+    try {
+      await uploadLocationPoint({
+        userId: uid,
+        deviceId,
+        lat: coords.lat,
+        lng: coords.lng,
+        accuracy: coords.accuracy,
+        recordedAt: new Date().toISOString(),
+        devicePlatform: getDeviceInfo().platform,
+      });
+    } catch (err) {
+      console.error('Failed to send location:', err);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -127,6 +146,7 @@ export function useLocationTracking() {
           if (disposed) return;
           setCurrentPosition(coords);
           clearError();
+          void uploadCoords(coords);
         })
         .catch((err: unknown) => {
           if (!disposed) {
@@ -160,26 +180,11 @@ export function useLocationTracking() {
     isTrackingRef.current = true;
 
     let cancelled = false;
-    const platform = getDeviceInfo().platform;
     let bgHandle: BackgroundGeoHandle | null = null;
 
-    const sendPos = async (coords: Coords) => {
-      const uid = userIdRef.current;
-      if (!uid || cancelled) return;
-      try {
-        await uploadLocationPoint({
-          userId: uid,
-          deviceId,
-          lat: coords.lat,
-          lng: coords.lng,
-          accuracy: coords.accuracy,
-          recordedAt: new Date().toISOString(),
-          devicePlatform: platform,
-        });
-      } catch (err) {
-        console.error('Failed to send location:', err);
-      }
-    };
+    if (isNative()) {
+      void startNativeBackgroundMonitoring();
+    }
 
     const doUpdate = async () => {
       if (cancelled) return;
@@ -188,7 +193,7 @@ export function useLocationTracking() {
         if (cancelled) return;
         setCurrentPosition(coords);
         clearError();
-        await sendPos(coords);
+        await uploadCoords(coords);
       } catch (err: unknown) {
         if (!cancelled) {
           reportError(err instanceof Error ? err.message : 'Location error');
@@ -205,17 +210,16 @@ export function useLocationTracking() {
           if (cancelled) return;
           setCurrentPosition(coords);
           clearError();
-          void sendPos(coords);
+          void uploadCoords(coords);
         },
         (err) => {
           if (!cancelled) reportError(err.message);
         }
       ).then((h) => { bgHandle = h; if (cancelled) void h.stop(); });
-    } else {
-      // Web: foreground polling само (browser ограничение)
-      doUpdate();
-      intervalRef.current = setInterval(doUpdate, 120000);
     }
+
+    doUpdate();
+    intervalRef.current = setInterval(doUpdate, isNative() ? 45000 : 120000);
 
     return () => {
       cancelled = true;
@@ -225,6 +229,7 @@ export function useLocationTracking() {
         intervalRef.current = null;
       }
       if (bgHandle) void bgHandle.stop();
+      if (isNative()) void stopNativeBackgroundMonitoring();
     };
   }, [isSharing, user?.id, deviceId]);
 

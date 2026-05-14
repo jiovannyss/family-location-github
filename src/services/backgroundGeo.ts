@@ -75,7 +75,7 @@ export async function startBackgroundGeolocation(
         backgroundTitle: 'Споделяне на местоположение',
         requestPermissions: true,
         stale: false,
-        distanceFilter: 50, // метра — спестява батерия
+        distanceFilter: 0,
       },
       (location, error) => {
         if (error) {
