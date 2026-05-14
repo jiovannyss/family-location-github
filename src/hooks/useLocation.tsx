@@ -1,23 +1,58 @@
-import { useState, useEffect, useRef } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { SharingState } from '@/lib/types';
-import { getDeviceId } from '@/services/deviceId';
+import { getDeviceId, getDeviceIdAsync } from '@/services/deviceId';
 import { geolocation, type Coords } from '@/services/geolocation';
 import { getDeviceInfo } from '@/services/device';
 import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
-import { startNativeBackgroundMonitoring, stopNativeBackgroundMonitoring } from '@/services/backgroundLocationPermission';
+import {
+  checkBackgroundPermission,
+  startNativeBackgroundMonitoring,
+  stopNativeBackgroundMonitoring,
+} from '@/services/backgroundLocationPermission';
 import { uploadLocationPoint } from '@/services/locationUpload';
 import { App as CapacitorApp } from '@capacitor/app';
 import { isNative, nativePlatform } from '@/services/platform';
 
+function useResolvedDeviceId() {
+  const [deviceId, setDeviceId] = useState(() => getDeviceId());
+
+  useEffect(() => {
+    let disposed = false;
+    void getDeviceIdAsync()
+      .then((resolved) => {
+        if (!disposed && resolved && resolved !== deviceId) {
+          setDeviceId(resolved);
+        }
+      })
+      .catch(() => {
+        /* ignore */
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [deviceId]);
+
+  return deviceId;
+}
+
 export function useSharingState() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const deviceId = getDeviceId();
+  const deviceId = useResolvedDeviceId();
 
-  // sharing_state for THIS device only
   const { data: sharingState, isLoading } = useQuery({
     queryKey: ['sharing-state', user?.id, deviceId],
     queryFn: async () => {
@@ -34,7 +69,6 @@ export function useSharingState() {
       return data as SharingState | null;
     },
     enabled: !!user,
-    // Re-check periodically so this device notices when another device took over
     refetchInterval: 30000,
   });
 
@@ -42,8 +76,6 @@ export function useSharingState() {
     mutationFn: async (isSharing: boolean) => {
       if (!user) throw new Error('Not authenticated');
 
-      // Upsert this device's sharing row. A DB trigger will deactivate other
-      // devices for the same user when is_sharing flips to true.
       const { data, error } = await supabase
         .from('sharing_state')
         .upsert(
@@ -73,37 +105,150 @@ export function useSharingState() {
     isSharing: sharingState?.is_sharing ?? false,
     toggleSharing: toggleSharing.mutate,
     isToggling: toggleSharing.isPending,
+    deviceId,
   };
 }
 
-export function useLocationTracking() {
+type PermissionState = 'granted' | 'denied' | 'prompt' | 'unknown' | null;
+type IosPermissionState = 'denied' | 'whileUsing' | 'always' | 'unknown' | null;
+type NativeBridgeStatus = 'idle' | 'started' | 'permission_missing' | 'not_available' | 'error';
+
+interface LocationTrackingDiagnostics {
+  userId: string | null;
+  deviceId: string;
+  isSharing: boolean;
+  isForeground: boolean;
+  iosPermission: IosPermissionState;
+  iosRawStatus: string | null;
+  jsForegroundWatcherActive: boolean;
+  nativeBridgeStarted: boolean;
+  nativeBridgeStatus: NativeBridgeStatus;
+  nativeBridgeMessage: string | null;
+  lastSuccessfulUploadAt: string | null;
+  lastUploadError: string | null;
+  lastForegroundFixAt: string | null;
+}
+
+interface LocationTrackingContextValue {
+  currentPosition: Coords | null;
+  error: string | null;
+  permissionState: PermissionState;
+  isUpdating: boolean;
+  diagnostics: LocationTrackingDiagnostics;
+  refreshNow: () => Promise<void>;
+}
+
+const LocationTrackingContext = createContext<LocationTrackingContextValue | undefined>(undefined);
+
+function mapIosPermission(rawStatus?: string | null): IosPermissionState {
+  if (!rawStatus) return 'unknown';
+  if (rawStatus === 'authorizedAlways') return 'always';
+  if (rawStatus === 'authorizedWhenInUse') return 'whileUsing';
+  if (rawStatus === 'denied' || rawStatus === 'restricted') return 'denied';
+  return 'unknown';
+}
+
+function useProvideLocationTracking(): LocationTrackingContextValue {
   const { user } = useAuth();
-  const { isSharing } = useSharingState();
+  const { isSharing, deviceId } = useSharingState();
   const [currentPosition, setCurrentPosition] = useState<Coords | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Брой последователни грешки — показваме UI чак при ≥2 поредни,
-  // за да скрием преходни (например при включване на „Позволи винаги",
-  // когато native service-ът се рестартира и една заявка може да fail-не).
+  const [permissionState, setPermissionState] = useState<PermissionState>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [appIsActive, setAppIsActive] = useState(true);
+  const [documentVisible, setDocumentVisible] = useState(
+    typeof document === 'undefined' ? true : document.visibilityState === 'visible'
+  );
+  const [diagnostics, setDiagnostics] = useState<LocationTrackingDiagnostics>({
+    userId: user?.id ?? null,
+    deviceId,
+    isSharing: false,
+    isForeground: true,
+    iosPermission: null,
+    iosRawStatus: null,
+    jsForegroundWatcherActive: false,
+    nativeBridgeStarted: false,
+    nativeBridgeStatus: 'idle',
+    nativeBridgeMessage: null,
+    lastSuccessfulUploadAt: null,
+    lastUploadError: null,
+    lastForegroundFixAt: null,
+  });
+
   const errorCountRef = useRef(0);
-  const reportError = (msg: string) => {
-    errorCountRef.current += 1;
-    if (errorCountRef.current >= 2) setError(msg);
-  };
-  const clearError = () => {
-    errorCountRef.current = 0;
-    setError(null);
-  };
-  const [permissionState, setPermissionState] = useState<
-    'granted' | 'denied' | 'prompt' | 'unknown' | null
-  >(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isTrackingRef = useRef(false);
+  const watchCleanupRef = useRef<(() => void) | null>(null);
+  const bgHandleRef = useRef<BackgroundGeoHandle | null>(null);
+  const lastWatchUploadAtRef = useRef(0);
   const userIdRef = useRef<string | undefined>(user?.id);
   userIdRef.current = user?.id;
-  const deviceId = getDeviceId();
-  const uploadCoords = async (coords: Coords) => {
+
+  const isIosNative = isNative() && nativePlatform() === 'ios';
+  const isForeground = appIsActive && documentVisible;
+
+  useEffect(() => {
+    setDiagnostics((prev) => ({
+      ...prev,
+      userId: user?.id ?? null,
+      deviceId,
+      isSharing,
+      isForeground,
+    }));
+  }, [deviceId, isForeground, isSharing, user?.id]);
+
+  const reportError = useCallback((message: string) => {
+    errorCountRef.current += 1;
+    if (errorCountRef.current >= 2) {
+      setError(message);
+    }
+  }, []);
+
+  const clearError = useCallback(() => {
+    errorCountRef.current = 0;
+    setError(null);
+  }, []);
+
+  const refreshForegroundPermission = useCallback(async () => {
+    try {
+      const permission = await geolocation.checkPermission();
+      setPermissionState(permission.state);
+    } catch {
+      setPermissionState('unknown');
+    }
+  }, []);
+
+  const refreshIosPermission = useCallback(async () => {
+    if (!isIosNative) {
+      setDiagnostics((prev) => ({
+        ...prev,
+        iosPermission: null,
+        iosRawStatus: null,
+      }));
+      return null;
+    }
+
+    try {
+      const status = await checkBackgroundPermission();
+      setDiagnostics((prev) => ({
+        ...prev,
+        iosPermission: mapIosPermission(status.rawStatus),
+        iosRawStatus: status.rawStatus ?? null,
+      }));
+      return status;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Неуспешна проверка на iOS permission';
+      setDiagnostics((prev) => ({
+        ...prev,
+        iosPermission: 'unknown',
+        iosRawStatus: message,
+      }));
+      return null;
+    }
+  }, [isIosNative]);
+
+  const uploadCoords = useCallback(async (coords: Coords, trigger: string) => {
     const uid = userIdRef.current;
-    if (!uid) return;
+    if (!uid) return false;
 
     try {
       await uploadLocationPoint({
@@ -112,135 +257,315 @@ export function useLocationTracking() {
         lat: coords.lat,
         lng: coords.lng,
         accuracy: coords.accuracy,
-        recordedAt: new Date().toISOString(),
+        recordedAt: new Date(coords.timestamp || Date.now()).toISOString(),
         devicePlatform: getDeviceInfo().platform,
       });
+
+      const uploadedAt = new Date().toISOString();
+      setDiagnostics((prev) => ({
+        ...prev,
+        lastSuccessfulUploadAt: uploadedAt,
+        lastUploadError: null,
+      }));
+      console.info('[location] upload success', { trigger, deviceId, userId: uid, uploadedAt });
+      return true;
     } catch (err) {
-      console.error('Failed to send location:', err);
+      const message = err instanceof Error ? err.message : 'Location upload failed';
+      setDiagnostics((prev) => ({
+        ...prev,
+        lastUploadError: message,
+      }));
+      console.error('[location] upload failed', { trigger, deviceId, userId: uid, message, error: err });
+      return false;
     }
-  };
+  }, [deviceId]);
 
-  useEffect(() => {
-    let cancelled = false;
-    geolocation.checkPermission().then((p) => {
-      if (!cancelled) setPermissionState(p.state);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isNative()) return;
-
-    let disposed = false;
-    let handle: { remove: () => Promise<void> } | null = null;
-
-    void CapacitorApp.addListener('appStateChange', ({ isActive }) => {
-      if (disposed || !isActive || !isSharing) return;
-      void geolocation.checkPermission().then((p) => {
-        if (!disposed) setPermissionState(p.state);
-      });
-      void geolocation.getCurrentPosition()
-        .then((coords) => {
-          if (disposed) return;
-          setCurrentPosition(coords);
-          clearError();
-          void uploadCoords(coords);
-        })
-        .catch((err: unknown) => {
-          if (!disposed) {
-            reportError(err instanceof Error ? err.message : 'Location error');
-          }
-        });
-    }).then((h) => {
-      handle = h;
-    }).catch(() => {
-      /* ignore on unsupported environments */
-    });
-
-    return () => {
-      disposed = true;
-      if (handle) void handle.remove();
-    };
-  }, [isSharing]);
-
-  useEffect(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-
-    if (!isSharing || !user?.id) {
-      isTrackingRef.current = false;
+  const ensureNativeBridge = useCallback(async () => {
+    if (!isIosNative || !isSharing) {
+      setDiagnostics((prev) => ({
+        ...prev,
+        nativeBridgeStarted: false,
+        nativeBridgeStatus: 'idle',
+        nativeBridgeMessage: null,
+      }));
       return;
     }
 
-    if (isTrackingRef.current) return;
-    isTrackingRef.current = true;
+    const result = await startNativeBackgroundMonitoring();
+    const status: NativeBridgeStatus = result.started
+      ? 'started'
+      : result.error
+        ? 'error'
+        : result.bridgeAvailable
+          ? 'permission_missing'
+          : 'not_available';
 
-    let cancelled = false;
-    let bgHandle: BackgroundGeoHandle | null = null;
-    const isIosNative = isNative() && nativePlatform() === 'ios';
+    setDiagnostics((prev) => ({
+      ...prev,
+      nativeBridgeStarted: result.started,
+      nativeBridgeStatus: status,
+      nativeBridgeMessage: result.error ?? result.reason ?? result.rawStatus ?? null,
+      iosPermission: result.rawStatus ? mapIosPermission(result.rawStatus) : prev.iosPermission,
+      iosRawStatus: result.rawStatus ?? prev.iosRawStatus,
+    }));
+
+    if (!result.started) {
+      console.warn('[location] iOS native bridge not started', result);
+    } else {
+      console.info('[location] iOS native bridge started', result);
+    }
+  }, [isIosNative, isSharing]);
+
+  const refreshNow = useCallback(async () => {
+    if (!isSharing || !userIdRef.current) return;
+
+    setIsUpdating(true);
+    try {
+      const coords = await geolocation.getCurrentPosition({ timeoutMs: 12000, enableHighAccuracy: true });
+      setCurrentPosition(coords);
+      setDiagnostics((prev) => ({
+        ...prev,
+        lastForegroundFixAt: new Date(coords.timestamp || Date.now()).toISOString(),
+      }));
+      clearError();
+      await uploadCoords(coords, 'manual');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Location error';
+      reportError(message);
+      setDiagnostics((prev) => ({
+        ...prev,
+        lastUploadError: message,
+      }));
+      console.error('[location] manual refresh failed', err);
+    } finally {
+      setIsUpdating(false);
+    }
+  }, [clearError, isSharing, reportError, uploadCoords]);
+
+  useEffect(() => {
+    void refreshForegroundPermission();
+    void refreshIosPermission();
+
+    let disposed = false;
+    let appListener: { remove: () => Promise<void> } | null = null;
 
     if (isNative()) {
-      void startNativeBackgroundMonitoring();
+      void CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (disposed) return;
+        setAppIsActive(isActive);
+        if (!isActive) return;
+        void refreshForegroundPermission();
+        void refreshIosPermission();
+        if (isSharing) {
+          void refreshNow();
+          void ensureNativeBridge();
+        }
+      }).then((handle) => {
+        appListener = handle;
+      }).catch(() => {
+        /* ignore */
+      });
     }
 
-    const doUpdate = async () => {
-      if (cancelled) return;
-      try {
-        const coords = await geolocation.getCurrentPosition();
-        if (cancelled) return;
-        setCurrentPosition(coords);
-        clearError();
-        await uploadCoords(coords);
-      } catch (err: unknown) {
-        if (!cancelled) {
-          reportError(err instanceof Error ? err.message : 'Location error');
-        }
-        console.error('Location update failed:', err);
+    const onVisibility = () => {
+      const visible = document.visibilityState === 'visible';
+      setDocumentVisible(visible);
+      if (!visible) return;
+      void refreshForegroundPermission();
+      void refreshIosPermission();
+      if (isSharing) {
+        void refreshNow();
+        void ensureNativeBridge();
       }
     };
 
-    // На Android оставаме с community plugin-а. На iOS вече разчитаме на
-    // native continuous tracking в IosLocationBridge, защото JS callback-ите
-    // не са достатъчно надеждни при заключен екран.
-    if (isBackgroundGeoSupported() && !isIosNative) {
-      void startBackgroundGeolocation(
-        (coords) => {
-          if (cancelled) return;
-          setCurrentPosition(coords);
-          clearError();
-          void uploadCoords(coords);
-        },
-        (err) => {
-          if (!cancelled) reportError(err.message);
-        }
-      ).then((h) => { bgHandle = h; if (cancelled) void h.stop(); });
-    }
-
-    doUpdate();
-    intervalRef.current = setInterval(doUpdate, isIosNative ? 120000 : (isNative() ? 45000 : 120000));
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onVisibility);
 
     return () => {
-      cancelled = true;
-      isTrackingRef.current = false;
+      disposed = true;
+      if (appListener) void appListener.remove();
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onVisibility);
+    };
+  }, [ensureNativeBridge, isSharing, refreshForegroundPermission, refreshIosPermission, refreshNow]);
+
+  useEffect(() => {
+    const clearRuntimeTracking = () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
-      if (bgHandle) void bgHandle.stop();
-      if (isNative()) void stopNativeBackgroundMonitoring();
+      if (watchCleanupRef.current) {
+        watchCleanupRef.current();
+        watchCleanupRef.current = null;
+      }
+      if (bgHandleRef.current) {
+        void bgHandleRef.current.stop();
+        bgHandleRef.current = null;
+      }
+      setDiagnostics((prev) => ({
+        ...prev,
+        jsForegroundWatcherActive: false,
+      }));
     };
-  }, [isSharing, user?.id, deviceId]);
 
-  return {
+    clearRuntimeTracking();
+
+    if (!isSharing || !user?.id) {
+      if (isIosNative) {
+        void stopNativeBackgroundMonitoring();
+      }
+      setIsUpdating(false);
+      return () => {
+        clearRuntimeTracking();
+      };
+    }
+
+    let cancelled = false;
+
+    const handleCoords = (coords: Coords, trigger: string) => {
+      if (cancelled) return;
+      setCurrentPosition(coords);
+      setDiagnostics((prev) => ({
+        ...prev,
+        lastForegroundFixAt: new Date(coords.timestamp || Date.now()).toISOString(),
+      }));
+      clearError();
+      void uploadCoords(coords, trigger);
+    };
+
+    const doUpdate = async (trigger: string) => {
+      if (cancelled) return;
+      setIsUpdating(true);
+      try {
+        const coords = await geolocation.getCurrentPosition({ timeoutMs: 12000, enableHighAccuracy: true });
+        handleCoords(coords, trigger);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Location error';
+        if (!cancelled) {
+          reportError(message);
+          setDiagnostics((prev) => ({
+            ...prev,
+            lastUploadError: message,
+          }));
+        }
+        console.error('[location] update failed', { trigger, error: err });
+      } finally {
+        if (!cancelled) {
+          setIsUpdating(false);
+        }
+      }
+    };
+
+    if (isIosNative) {
+      void refreshIosPermission();
+      void ensureNativeBridge();
+
+      if (isForeground) {
+        watchCleanupRef.current = geolocation.watchPosition(
+          (coords) => {
+            const now = Date.now();
+            setCurrentPosition(coords);
+            setDiagnostics((prev) => ({
+              ...prev,
+              lastForegroundFixAt: new Date(coords.timestamp || now).toISOString(),
+            }));
+            clearError();
+            if (now - lastWatchUploadAtRef.current < 30000) return;
+            lastWatchUploadAtRef.current = now;
+            void uploadCoords(coords, 'watch');
+          },
+          (err) => {
+            if (cancelled) return;
+            reportError(err.message);
+            setDiagnostics((prev) => ({
+              ...prev,
+              lastUploadError: err.message,
+            }));
+            console.error('[location] iOS watchPosition failed', err);
+          }
+        );
+
+        setDiagnostics((prev) => ({
+          ...prev,
+          jsForegroundWatcherActive: true,
+        }));
+
+        void doUpdate('startup');
+        intervalRef.current = setInterval(() => {
+          void doUpdate('interval');
+        }, 45000);
+      }
+
+      return () => {
+        cancelled = true;
+        clearRuntimeTracking();
+      };
+    }
+
+    if (isBackgroundGeoSupported()) {
+      void startBackgroundGeolocation(
+        (coords) => {
+          if (cancelled) return;
+          handleCoords(coords, 'background_geo');
+        },
+        (err) => {
+          if (!cancelled) reportError(err.message);
+        }
+      ).then((handle) => {
+        bgHandleRef.current = handle;
+        if (cancelled) void handle.stop();
+      });
+    }
+
+    void doUpdate('startup');
+    intervalRef.current = setInterval(() => {
+      void doUpdate(isForeground ? 'interval' : 'background_interval');
+    }, isNative() ? 45000 : 120000);
+
+    return () => {
+      cancelled = true;
+      clearRuntimeTracking();
+      if (isIosNative) {
+        void stopNativeBackgroundMonitoring();
+      }
+    };
+  }, [
+    clearError,
+    ensureNativeBridge,
+    isForeground,
+    isIosNative,
+    isSharing,
+    refreshIosPermission,
+    reportError,
+    uploadCoords,
+    user?.id,
+  ]);
+
+  const value = useMemo<LocationTrackingContextValue>(() => ({
     currentPosition,
     error,
     permissionState,
-    isUpdating: false,
-  };
+    isUpdating,
+    diagnostics,
+    refreshNow,
+  }), [currentPosition, diagnostics, error, isUpdating, permissionState, refreshNow]);
+
+  return value;
+}
+
+export function LocationTrackingProvider({ children }: { children: ReactNode }) {
+  const value = useProvideLocationTracking();
+  return <LocationTrackingContext.Provider value={value}>{children}</LocationTrackingContext.Provider>;
+}
+
+export function useLocationTracking() {
+  const context = useContext(LocationTrackingContext);
+  if (!context) {
+    throw new Error('useLocationTracking must be used within LocationTrackingProvider');
+  }
+  return context;
 }
 
 export function useRealtimeLocations(userIds: string[]) {
@@ -251,9 +576,6 @@ export function useRealtimeLocations(userIds: string[]) {
     if (userIds.length === 0) return;
 
     const allowed = new Set(userIds);
-    // Note: no `filter` here — RLS already restricts which rows we can see.
-    // The `in.()` filter on postgres_changes was sometimes silently dropping
-    // events, so we filter client-side instead.
     const channel = supabase
       .channel(`location-updates-${idsKey}`)
       .on(
@@ -274,6 +596,5 @@ export function useRealtimeLocations(userIds: string[]) {
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, queryClient]);
+  }, [idsKey, queryClient, userIds]);
 }
