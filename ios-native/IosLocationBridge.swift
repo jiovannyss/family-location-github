@@ -32,6 +32,8 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
         CAPPluginMethod(name: "requestForeground", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAlways", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startTracking", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopTracking", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "startSlc", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stopSlc", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearMissingFlag", returnType: CAPPluginReturnPromise),
@@ -52,6 +54,7 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
     private let oneShotManager = CLLocationManager()
     private var managersConfigured = false
     private var slcStarted = false
+    private var continuousStarted = false
     /// Когато requestAlways е извикан преди WhenInUse да е grant-нат,
     /// маркираме flag-а и пускаме requestAlwaysAuthorization() от
     /// delegate callback-а — иначе iOS игнорира заявката.
@@ -83,16 +86,20 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
     private func ensureManagersConfigured() {
         if managersConfigured { return }
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = kCLDistanceFilterNone
         manager.pausesLocationUpdatesAutomatically = false
         // Позволи да получаваме updates на background — изисква
         // UIBackgroundModes=location и Always permission.
         if #available(iOS 9.0, *) {
             manager.allowsBackgroundLocationUpdates = true
         }
+        if #available(iOS 11.0, *) {
+            manager.showsBackgroundLocationIndicator = false
+        }
         // One-shot manager за silent push — споделя delegate-а.
         oneShotManager.delegate = self
-        oneShotManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        oneShotManager.desiredAccuracy = kCLLocationAccuracyBest
         if #available(iOS 9.0, *) {
             oneShotManager.allowsBackgroundLocationUpdates = true
         }
@@ -195,6 +202,45 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
         }
     }
 
+    @objc func startTracking(_ call: CAPPluginCall) {
+        ensureManagersConfigured()
+        let status = currentStatus()
+        guard status == .authorizedAlways else {
+            NSLog("[\(IosLocationBridge.TAG)] startTracking skipped: auth=\(authStatusString())")
+            call.resolve(["started": false, "reason": authStatusString()])
+            return
+        }
+
+        DispatchQueue.main.async {
+            if !self.continuousStarted {
+                self.manager.startUpdatingLocation()
+                self.continuousStarted = true
+                NSLog("[\(IosLocationBridge.TAG)] continuous location tracking started")
+            }
+            if CLLocationManager.significantLocationChangeMonitoringAvailable(), !self.slcStarted {
+                self.manager.startMonitoringSignificantLocationChanges()
+                self.slcStarted = true
+                NSLog("[\(IosLocationBridge.TAG)] SLC monitoring started (via startTracking)")
+            }
+            call.resolve(["started": true])
+        }
+    }
+
+    @objc func stopTracking(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            if self.continuousStarted {
+                self.manager.stopUpdatingLocation()
+                self.continuousStarted = false
+            }
+            if self.slcStarted {
+                self.manager.stopMonitoringSignificantLocationChanges()
+                self.slcStarted = false
+            }
+            NSLog("[\(IosLocationBridge.TAG)] continuous tracking stopped")
+            call.resolve()
+        }
+    }
+
     @objc func startSlc(_ call: CAPPluginCall) {
         guard CLLocationManager.significantLocationChangeMonitoringAvailable() else {
             call.reject("SLC not available on this device")
@@ -224,7 +270,14 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         let isPushFix = manager === oneShotManager || !pendingPushCompletions.isEmpty
-        let source = isPushFix ? "native_ios_push" : "native_ios_slc"
+        let source: String
+        if isPushFix {
+            source = "native_ios_push"
+        } else if continuousStarted {
+            source = "native_ios_continuous"
+        } else {
+            source = "native_ios_slc"
+        }
         NSLog("[\(IosLocationBridge.TAG)] fix (\(source)) lat=\(loc.coordinate.latitude) lng=\(loc.coordinate.longitude) acc=\(loc.horizontalAccuracy)")
 
         if isPushFix && !pendingPushCompletions.isEmpty {
@@ -260,12 +313,21 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
                 self.manager.requestAlwaysAuthorization()
             }
         }
-        // Ако вече имаме Always и не сме стартирали SLC — стартирай автоматично.
-        if currentStatus() == .authorizedAlways && !slcStarted &&
-           CLLocationManager.significantLocationChangeMonitoringAvailable() {
-            manager.startMonitoringSignificantLocationChanges()
-            slcStarted = true
-            NSLog("[\(IosLocationBridge.TAG)] SLC auto-started after auth change")
+        // Ако вече имаме Always — стартирай continuous + SLC автоматично.
+        if currentStatus() == .authorizedAlways {
+            if !continuousStarted {
+                self.manager.startUpdatingLocation()
+                continuousStarted = true
+                NSLog("[\(IosLocationBridge.TAG)] continuous tracking auto-started after auth change")
+            }
+            if !slcStarted && CLLocationManager.significantLocationChangeMonitoringAvailable() {
+                self.manager.startMonitoringSignificantLocationChanges()
+                slcStarted = true
+                NSLog("[\(IosLocationBridge.TAG)] SLC auto-started after auth change")
+            }
+        } else if continuousStarted {
+            self.manager.stopUpdatingLocation()
+            continuousStarted = false
         }
     }
 

@@ -10,7 +10,7 @@ import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGe
 import { startNativeBackgroundMonitoring, stopNativeBackgroundMonitoring } from '@/services/backgroundLocationPermission';
 import { uploadLocationPoint } from '@/services/locationUpload';
 import { App as CapacitorApp } from '@capacitor/app';
-import { isNative } from '@/services/platform';
+import { isNative, nativePlatform } from '@/services/platform';
 
 export function useSharingState() {
   const { user } = useAuth();
@@ -181,6 +181,7 @@ export function useLocationTracking() {
 
     let cancelled = false;
     let bgHandle: BackgroundGeoHandle | null = null;
+    const isIosNative = isNative() && nativePlatform() === 'ios';
 
     if (isNative()) {
       void startNativeBackgroundMonitoring();
@@ -202,9 +203,10 @@ export function useLocationTracking() {
       }
     };
 
-    // На native: стартираме background tracking — продължава да работи
-    // когато app-ът е минимизиран или екранът е заключен.
-    if (isBackgroundGeoSupported()) {
+    // На Android оставаме с community plugin-а. На iOS вече разчитаме на
+    // native continuous tracking в IosLocationBridge, защото JS callback-ите
+    // не са достатъчно надеждни при заключен екран.
+    if (isBackgroundGeoSupported() && !isIosNative) {
       void startBackgroundGeolocation(
         (coords) => {
           if (cancelled) return;
@@ -219,7 +221,7 @@ export function useLocationTracking() {
     }
 
     doUpdate();
-    intervalRef.current = setInterval(doUpdate, isNative() ? 45000 : 120000);
+    intervalRef.current = setInterval(doUpdate, isIosNative ? 120000 : (isNative() ? 45000 : 120000));
 
     return () => {
       cancelled = true;
