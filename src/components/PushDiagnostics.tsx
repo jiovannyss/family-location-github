@@ -193,7 +193,13 @@ export default function PushDiagnostics() {
     }
   };
 
-  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [user?.id]);
+  useEffect(() => { void load(); /* eslint-disable-next-line */ }, [
+    user?.id,
+    diagnostics.lastSuccessfulUploadAt,
+    diagnostics.lastUploadError,
+    diagnostics.jsForegroundWatcherActive,
+    diagnostics.nativeBridgeStatus,
+  ]);
 
   return (
     <Card>
