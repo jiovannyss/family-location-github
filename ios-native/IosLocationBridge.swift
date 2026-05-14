@@ -23,7 +23,19 @@ import UIKit
  * Регистрира се в AppDelegate чрез `bridge.registerPluginInstance(IosLocationBridge())`.
  */
 @objc(IosLocationBridge)
-public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
+public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDelegate {
+
+    public let identifier = "IosLocationBridge"
+    public let jsName = "IosLocationBridge"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "check", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestForeground", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "requestAlways", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openAppSettings", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "startSlc", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "stopSlc", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearMissingFlag", returnType: CAPPluginReturnPromise),
+    ]
 
     private static let TAG = "FamLocIOS"
     // @capacitor/preferences плъгинът на iOS префиксира всички ключове с
@@ -38,6 +50,7 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     /// Отделен manager за еднократен fix при silent push (за да не интерферира с SLC).
     private let oneShotManager = CLLocationManager()
+    private var managersConfigured = false
     private var slcStarted = false
     /// Когато requestAlways е извикан преди WhenInUse да е grant-нат,
     /// маркираме flag-а и пускаме requestAlwaysAuthorization() от
@@ -50,7 +63,25 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
     private var pendingPushCompletions: [(UIBackgroundFetchResult) -> Void] = []
     private var pushRefreshInFlight = false
 
+    /// Жив plugin instance, ако Capacitor е заредил bridge-а.
+    public static var sharedInstance: IosLocationBridge?
+    /// Fallback native handler за silent push, дори когато JS bridge-ът не е зареден.
+    private static let backgroundHandler = IosLocationBridge()
+
+    @objc public static func sharedHandler() -> IosLocationBridge {
+        let handler = sharedInstance ?? backgroundHandler
+        handler.ensureManagersConfigured()
+        return handler
+    }
+
     public override func load() {
+        ensureManagersConfigured()
+        IosLocationBridge.sharedInstance = self
+        NSLog("[\(IosLocationBridge.TAG)] loaded; current auth=\(authStatusString())")
+    }
+
+    private func ensureManagersConfigured() {
+        if managersConfigured { return }
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.pausesLocationUpdatesAutomatically = false
@@ -65,12 +96,8 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
         if #available(iOS 9.0, *) {
             oneShotManager.allowsBackgroundLocationUpdates = true
         }
-        IosLocationBridge.sharedInstance = self
-        NSLog("[\(IosLocationBridge.TAG)] loaded; current auth=\(authStatusString())")
+        managersConfigured = true
     }
-
-    /// Singleton ref за достъп от AppDelegate (silent-push handler).
-    public static weak var sharedInstance: IosLocationBridge?
 
     /**
      * Извиква се от AppDelegate.application(_:didReceiveRemoteNotification:fetchCompletionHandler:)
@@ -84,23 +111,26 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
     @objc public func handleSilentLocationRefreshPush(
         completion: @escaping (UIBackgroundFetchResult) -> Void
     ) {
+        ensureManagersConfigured()
         let status = currentStatus()
-        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+        guard status == .authorizedAlways else {
             NSLog("[\(IosLocationBridge.TAG)] silent push: no location auth (\(authStatusString())) → noData")
             completion(.noData)
             return
         }
-        NSLog("[\(IosLocationBridge.TAG)] silent push: requesting one-shot location")
         pendingPushCompletions.append(completion)
+        if pushRefreshInFlight {
+            NSLog("[\(IosLocationBridge.TAG)] silent push: request already in flight → queued")
+            return
+        }
+        pushRefreshInFlight = true
+        NSLog("[\(IosLocationBridge.TAG)] silent push: requesting one-shot location")
+
         // Watchdog — ако нищо не дойде до 25s, върни failed (преди iOS да ни убие).
-        let snapshotIndex = pendingPushCompletions.count - 1
         DispatchQueue.main.asyncAfter(deadline: .now() + 25.0) { [weak self] in
-            guard let self = self else { return }
-            if snapshotIndex < self.pendingPushCompletions.count {
-                let cb = self.pendingPushCompletions.remove(at: snapshotIndex)
-                NSLog("[\(IosLocationBridge.TAG)] silent push: watchdog timeout → failed")
-                cb(.failed)
-            }
+            guard let self = self, self.pushRefreshInFlight else { return }
+            NSLog("[\(IosLocationBridge.TAG)] silent push: watchdog timeout → failed")
+            self.resolvePendingPushCompletions(.failed)
         }
         DispatchQueue.main.async { [weak self] in
             self?.oneShotManager.requestLocation()
@@ -198,12 +228,9 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
         NSLog("[\(IosLocationBridge.TAG)] fix (\(source)) lat=\(loc.coordinate.latitude) lng=\(loc.coordinate.longitude) acc=\(loc.horizontalAccuracy)")
 
         if isPushFix && !pendingPushCompletions.isEmpty {
-            // Drain всички pending completions с този fix.
-            let cbs = pendingPushCompletions
-            pendingPushCompletions.removeAll()
             uploadLocation(loc, source: source) { ok in
                 let result: UIBackgroundFetchResult = ok ? .newData : .failed
-                DispatchQueue.main.async { cbs.forEach { $0(result) } }
+                DispatchQueue.main.async { self.resolvePendingPushCompletions(result) }
             }
         } else {
             uploadLocation(loc, source: source)
@@ -219,9 +246,7 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
         }
         // Ако грешката е от one-shot заявка → резолвни pending push completions.
         if manager === oneShotManager && !pendingPushCompletions.isEmpty {
-            let cbs = pendingPushCompletions
-            pendingPushCompletions.removeAll()
-            DispatchQueue.main.async { cbs.forEach { $0(.failed) } }
+            DispatchQueue.main.async { self.resolvePendingPushCompletions(.failed) }
         }
     }
 
@@ -279,6 +304,13 @@ public class IosLocationBridge: CAPPlugin, CLLocationManagerDelegate {
         notifyListeners("authChange", data: [
             "status": authStatusString()
         ])
+    }
+
+    private func resolvePendingPushCompletions(_ result: UIBackgroundFetchResult) {
+        let cbs = pendingPushCompletions
+        pendingPushCompletions.removeAll()
+        pushRefreshInFlight = false
+        cbs.forEach { $0(result) }
     }
 
     /**
