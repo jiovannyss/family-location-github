@@ -316,17 +316,17 @@ public class IosLocationBridge: CAPPlugin, CAPBridgedPlugin, CLLocationManagerDe
         // Ако вече имаме Always — стартирай continuous + SLC автоматично.
         if currentStatus() == .authorizedAlways {
             if !continuousStarted {
-                manager.startUpdatingLocation()
+                self.manager.startUpdatingLocation()
                 continuousStarted = true
                 NSLog("[\(IosLocationBridge.TAG)] continuous tracking auto-started after auth change")
             }
             if !slcStarted && CLLocationManager.significantLocationChangeMonitoringAvailable() {
-                manager.startMonitoringSignificantLocationChanges()
+                self.manager.startMonitoringSignificantLocationChanges()
                 slcStarted = true
                 NSLog("[\(IosLocationBridge.TAG)] SLC auto-started after auth change")
             }
         } else if continuousStarted {
-            manager.stopUpdatingLocation()
+            self.manager.stopUpdatingLocation()
             continuousStarted = false
         }
     }
