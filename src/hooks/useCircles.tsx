@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { Circle, Invite, MemberWithLocation } from '@/lib/types';
+import { requestPeerLocationRefresh } from '@/services/locationRefresh';
 import {
   createCircleApi,
   deleteCircleApi,
@@ -149,6 +150,17 @@ export function useCircleMembers(circleId: string | null) {
     },
     enabled: !!circleId,
     refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  useQuery({
+    queryKey: ['circle-members-refresh', circleId, user?.id],
+    queryFn: async () => {
+      await requestPeerLocationRefresh();
+      return null;
+    },
+    enabled: !!circleId && !!user,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
   });
 
   return {
