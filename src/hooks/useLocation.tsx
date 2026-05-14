@@ -7,6 +7,7 @@ import { getDeviceId } from '@/services/deviceId';
 import { geolocation, type Coords } from '@/services/geolocation';
 import { getDeviceInfo } from '@/services/device';
 import { isBackgroundGeoSupported, startBackgroundGeolocation, type BackgroundGeoHandle } from '@/services/backgroundGeo';
+import { startNativeBackgroundMonitoring, stopNativeBackgroundMonitoring } from '@/services/backgroundLocationPermission';
 import { uploadLocationPoint } from '@/services/locationUpload';
 import { App as CapacitorApp } from '@capacitor/app';
 import { isNative } from '@/services/platform';
@@ -179,8 +180,11 @@ export function useLocationTracking() {
     isTrackingRef.current = true;
 
     let cancelled = false;
-    const platform = getDeviceInfo().platform;
     let bgHandle: BackgroundGeoHandle | null = null;
+
+    if (isNative()) {
+      void startNativeBackgroundMonitoring();
+    }
 
     const doUpdate = async () => {
       if (cancelled) return;
@@ -225,6 +229,7 @@ export function useLocationTracking() {
         intervalRef.current = null;
       }
       if (bgHandle) void bgHandle.stop();
+      if (isNative()) void stopNativeBackgroundMonitoring();
     };
   }, [isSharing, user?.id, deviceId]);
 
