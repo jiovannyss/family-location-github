@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/hooks/useTheme";
 import { AppBadgeSync } from "@/components/AppBadgeSync";
+import { LocationTrackingProvider } from "@/hooks/useLocation";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import ResetPassword from "./pages/ResetPassword";
@@ -24,29 +25,31 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
-      <ThemeProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner position="bottom-center" />
-        <AppBadgeSync />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="/push-diagnostics" element={<PushDiagnosticsPage />} />
-            <Route path="/documents" element={<Documents />} />
-            <Route path="/privacy-data" element={<PrivacyData />} />
-            <Route path="/about" element={<About />} />
-            <Route path="/privacy" element={<Privacy />} />
-            <Route path="/terms" element={<Terms />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-      </ThemeProvider>
+      <LocationTrackingProvider>
+        <ThemeProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner position="bottom-center" />
+          <AppBadgeSync />
+          <BrowserRouter>
+            <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/settings" element={<Settings />} />
+              <Route path="/push-diagnostics" element={<PushDiagnosticsPage />} />
+              <Route path="/documents" element={<Documents />} />
+              <Route path="/privacy-data" element={<PrivacyData />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+        </ThemeProvider>
+      </LocationTrackingProvider>
     </AuthProvider>
   </QueryClientProvider>
 );
