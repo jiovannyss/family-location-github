@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Bug, RefreshCw, Send, Bell, MapPin } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useLocationTracking } from '@/hooks/useLocation';
+import { checkBackgroundPermission } from '@/services/backgroundLocationPermission';
 import { isNative, nativePlatform } from '@/services/platform';
 import { getDeviceIdAsync } from '@/services/deviceId';
 import { push, pushDiag, ensurePushLifecycleStarted } from '@/services/push';
@@ -35,10 +37,20 @@ interface Diag {
   listenersAttached: boolean;
   lastPermissionState: string | null;
   pluginLoadError: string | null;
+  locationPermission: string;
+  sharingForDevice: boolean;
+  sharingUpdatedAt: string | null;
+  lastLocationUploadAt: string | null;
+  lastLocationUploadError: string | null;
+  jsForegroundWatcherActive: boolean;
+  nativeBridgeStarted: boolean;
+  nativeBridgeStatus: string;
+  nativeBridgeMessage: string | null;
 }
 
 export default function PushDiagnostics() {
   const { user } = useAuth();
+  const { diagnostics } = useLocationTracking();
   const [d, setD] = useState<Diag | null>(null);
   const [loading, setLoading] = useState(false);
   const [reregistering, setReregistering] = useState(false);
@@ -63,6 +75,9 @@ export default function PushDiagnostics() {
       let tokenLen: number | null = null;
       let tokenUpdatedAt: string | null = null;
       let tokensCount = 0;
+      let sharingForDevice = false;
+      let sharingUpdatedAt: string | null = null;
+      let locationPermission = 'unknown';
       if (user) {
         const { data, error } = await supabase
           .from('push_tokens')
@@ -78,7 +93,25 @@ export default function PushDiagnostics() {
             tokenUpdatedAt = own.updated_at;
           }
         }
+
+        const { data: sharingState } = await supabase
+          .from('sharing_state')
+          .select('is_sharing, updated_at')
+          .eq('user_id', user.id)
+          .eq('device_id', deviceId)
+          .maybeSingle();
+
+        sharingForDevice = !!sharingState?.is_sharing;
+        sharingUpdatedAt = sharingState?.updated_at ?? null;
       }
+
+      try {
+        const perm = await checkBackgroundPermission();
+        locationPermission = perm.rawStatus ?? `${perm.foreground}/${perm.background}`;
+      } catch (e) {
+        locationPermission = 'error: ' + (e as Error).message;
+      }
+
       const notifPermission =
         typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
 
@@ -107,6 +140,15 @@ export default function PushDiagnostics() {
         listenersAttached: pushDiag.listenersAttached,
         lastPermissionState: pushDiag.lastPermissionState,
         pluginLoadError: pushDiag.pluginLoadError,
+        locationPermission,
+        sharingForDevice,
+        sharingUpdatedAt,
+        lastLocationUploadAt: diagnostics.lastSuccessfulUploadAt,
+        lastLocationUploadError: diagnostics.lastUploadError,
+        jsForegroundWatcherActive: diagnostics.jsForegroundWatcherActive,
+        nativeBridgeStarted: diagnostics.nativeBridgeStarted,
+        nativeBridgeStatus: diagnostics.nativeBridgeStatus,
+        nativeBridgeMessage: diagnostics.nativeBridgeMessage,
       });
     } finally {
       setLoading(false);
