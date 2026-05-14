@@ -24,6 +24,14 @@ export interface BgPermissionStatus {
   rawStatus?: string;
 }
 
+export interface NativeTrackingStartResult {
+  started: boolean;
+  bridgeAvailable: boolean;
+  reason?: string;
+  rawStatus?: string;
+  error?: string;
+}
+
 interface BgBridgePlugin {
   check(): Promise<{ foreground: string; background: string; sdkInt: number; missingDetectedAt: number }>;
   requestBackground(): Promise<{ background: string }>;
@@ -36,7 +44,7 @@ interface IosBridgePlugin {
   requestForeground(): Promise<{ foreground: string }>;
   requestAlways(): Promise<{ background: string }>;
   openAppSettings(): Promise<void>;
-  startTracking(): Promise<{ started: boolean; reason?: string }>;
+  startTracking(): Promise<{ started: boolean; reason?: string; rawStatus?: string }>;
   stopTracking(): Promise<void>;
   startSlc(): Promise<{ started: boolean }>;
   stopSlc(): Promise<void>;
@@ -97,8 +105,6 @@ export async function checkBackgroundPermission(): Promise<BgPermissionStatus> {
         rawStatus: r.rawStatus,
       };
     } catch {
-      // Bridge може да не е регистриран още (ios-prepare.mjs не е пуснат)
-      // → fallback на Geolocation API който дава само foreground.
       try {
         const cur = await Geolocation.checkPermissions();
         const fg = normalize(cur.location);
@@ -108,7 +114,6 @@ export async function checkBackgroundPermission(): Promise<BgPermissionStatus> {
       }
     }
   }
-  // web
   try {
     const cur = await Geolocation.checkPermissions();
     const fg = normalize(cur.location);
@@ -129,13 +134,17 @@ export async function requestBackgroundPermission(): Promise<PermState> {
     try {
       const r = await AndroidBridge.requestBackground();
       return normalize(r.background);
-    } catch { return 'unknown'; }
+    } catch {
+      return 'unknown';
+    }
   }
   if (isIosNative()) {
     try {
       const r = await IosBridge.requestAlways();
       return normalize(r.background);
-    } catch { return 'unknown'; }
+    } catch {
+      return 'unknown';
+    }
   }
   return 'unknown';
 }
@@ -163,26 +172,58 @@ export async function clearBackgroundMissingFlag(): Promise<void> {
 }
 
 /**
- * Стартира Significant Location Changes на iOS — единственият начин да
- * получаваме locations след force-quit на приложението. На Android — no-op
- * (там FCM data push + native foreground service вършат същата работа).
+ * Стартира native background tracking на iOS.
+ *
+ * Ако permission е само While Using, връща подробен status, но НЕ хвърля,
+ * за да може JS foreground fallback-ът да продължи да работи.
  */
-export async function startNativeBackgroundMonitoring(): Promise<void> {
-  if (!isIosNative()) return;
+export async function startNativeBackgroundMonitoring(): Promise<NativeTrackingStartResult> {
+  if (!isIosNative()) {
+    return {
+      started: false,
+      bridgeAvailable: false,
+      reason: 'not_ios',
+    };
+  }
+
   try {
-    await IosBridge.startTracking();
+    const status = await checkBackgroundPermission();
+    const rawStatus = status.rawStatus;
+    const result = await IosBridge.startTracking();
+    return {
+      started: !!result.started,
+      bridgeAvailable: true,
+      reason: result.reason,
+      rawStatus: result.rawStatus ?? rawStatus,
+    };
   } catch (e) {
-    console.warn('[bg-perm] iOS startTracking failed', e);
+    const error = e instanceof Error ? e.message : 'iOS startTracking failed';
+    console.error('[bg-perm] iOS startTracking failed', e);
+    let rawStatus: string | undefined;
+    try {
+      rawStatus = (await checkBackgroundPermission()).rawStatus;
+    } catch {
+      rawStatus = undefined;
+    }
+    return {
+      started: false,
+      bridgeAvailable: true,
+      rawStatus,
+      error,
+    };
   }
 }
 
 export async function stopNativeBackgroundMonitoring(): Promise<void> {
   if (!isIosNative()) return;
-  try { await IosBridge.stopTracking(); } catch { /* ignore */ }
+  try {
+    await IosBridge.stopTracking();
+  } catch (e) {
+    console.error('[bg-perm] iOS stopTracking failed', e);
+  }
 }
 
 export function isBackgroundPermissionRelevant(): boolean {
-  // Показваме UI на двете нативни платформи. На web — няма background.
   return isAndroidNative() || isIosNative();
 }
 
@@ -191,7 +232,7 @@ export function platformLabels() {
     return {
       alwaysOption: 'Винаги',
       settingsPath: 'Настройки → Поверителност → Услуги за локация → Семейна локация → Винаги',
-      restrictionNote: 'За пълно споделяне приложението изисква отделно потвърждение за достъп „Винаги" — затова този избор не е в първоначалния прозорец.',
+      restrictionNote: 'На iPhone фоновото обновяване работи само ако разрешението е „Винаги“. Ако е „Докато използвам приложението“, споделянето ще работи само на отворен екран.',
     };
   }
   return {
@@ -201,5 +242,4 @@ export function platformLabels() {
   };
 }
 
-// Suppress unused-import warning for Capacitor (тип guard)
 void Capacitor;
